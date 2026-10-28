@@ -1,8 +1,3 @@
-/**
- * AURA IPTV — Unified Application Coordinator
- */
-
-// Native Electron / Web Bridge Polyfill
 if (!window.auraNative) {
     window.auraNative = {
         platform: 'web',
@@ -56,8 +51,20 @@ if (!window.auraNative) {
 }
 
 // Helpers
-const safeJSON = (k, d) => { try { const v = JSON.parse(localStorage.getItem(k)); return v ?? d; } catch (_) { return d; } };
-const safeArray = (k) => { const v = safeJSON(k, []); return Array.isArray(v) ? v : []; };
+const safeJSON = (k, d) => {
+    try {
+        const v = JSON.parse(localStorage.getItem(k));
+        return v ?? d;
+    } catch (_) {
+        return d;
+    }
+};
+
+const safeArray = (k) => {
+    const v = safeJSON(k, []);
+    return Array.isArray(v) ? v : [];
+};
+
 const esc = (t) => String(t ?? '').replace(/&/g, '&amp;').replace(/</g, '&lt;').replace(/>/g, '&gt;').replace(/"/g, '&quot;').replace(/'/g, '&#39;');
 const jsEsc = (t) => String(t ?? '').replace(/\\/g, '\\\\').replace(/'/g, "\\'").replace(/"/g, '\\"');
 
@@ -77,7 +84,9 @@ function showToast(msg, duration = 2500) {
 
 // State Management
 let config = safeJSON('aura_config', { server: '', user: '', pass: '' });
-function getServer() { return (config.server || '').trim().replace(/\/+$/, ''); }
+function getServer() {
+    return (config.server || '').trim().replace(/\/+$/, '');
+}
 
 const state = {
     currentTab: 'vod',
@@ -93,7 +102,8 @@ const state = {
     currentIndex: -1,
     activeStreamUrl: '',
     playerEngine: null,
-    searchTimer: null
+    searchTimer: null,
+    currentCategoryTitle: ''
 };
 
 // Storage API Namespace
@@ -443,6 +453,16 @@ async function loadDashboard() {
 async function loadCategoryStreams(catId, catName = null) {
     const grid = document.getElementById('main-grid');
     if (!grid) return;
+
+    // Avoid loading tens of thousands of streams at once: default to first non-empty category
+    if (catId === 'all') {
+        const cats = state.categories[state.currentTab] || [];
+        const firstCat = cats.find(c => c.category_id && !/^[-=_*\s]+$/.test(c.category_name));
+        if (firstCat) {
+            return loadCategoryStreams(firstCat.category_id, firstCat.category_name);
+        }
+    }
+
     grid.innerHTML = '<div class="col-span-full flex justify-center py-24"><div class="w-10 h-10 border-2 border-primary border-t-transparent rounded-full animate-spin"></div></div>';
 
     let action = 'get_live_streams';
@@ -569,11 +589,53 @@ function executeSearch(query) {
 }
 
 // Media Playback Engine
-function playMediaItem(index) {
+async function playMediaItem(index) {
     state.currentPlaylist = state.activeCategoryStreams;
     state.currentIndex = index;
     const item = state.currentPlaylist[index];
-    if (item) executePlayerEngine(item);
+    if (!item) return;
+
+    // Series Handling: Fetch episodes rather than playing series ID directly
+    if (item.type === 'series') {
+        showToast('Loading series episodes...');
+        try {
+            const data = await window.auraNative.apiRequest({
+                server: getServer(),
+                user: config.user,
+                pass: config.pass,
+                action: 'get_series_info',
+                params: `&series_id=${item.id}`
+            });
+
+            const episodes = [];
+            if (data?.episodes) {
+                Object.keys(data.episodes).forEach(seasonNum => {
+                    const seasonEps = data.episodes[seasonNum] || [];
+                    seasonEps.forEach(ep => {
+                        episodes.push({
+                            id: ep.id || ep.stream_id,
+                            title: `S${seasonNum} E${ep.episode_num} - ${ep.title || 'Episode'}`,
+                            ext: ep.container_extension || 'mp4',
+                            type: 'episode',
+                            img: ep.info?.movie_image || item.img
+                        });
+                    });
+                });
+            }
+
+            if (episodes.length > 0) {
+                state.currentPlaylist = episodes;
+                state.currentIndex = 0;
+                executePlayerEngine(episodes[0]);
+                renderPlayerDrawer();
+                return;
+            }
+        } catch (err) {
+            console.warn('Series info fetch failed:', err);
+        }
+    }
+
+    executePlayerEngine(item);
 }
 
 function executePlayerEngine(item, forceProxy = false) {
@@ -596,10 +658,12 @@ function executePlayerEngine(item, forceProxy = false) {
     const seekBarContainer = document.getElementById('seek-bar-container');
     const goLiveBtn = document.getElementById('btn-go-live');
     const liveBadge = document.getElementById('player-live-badge');
-    
+    const drawerBtn = document.getElementById('btn-drawer');
+
     if (seekBarContainer) seekBarContainer.style.display = isLive ? 'none' : 'flex';
     if (goLiveBtn) goLiveBtn.style.display = isLive ? 'inline-flex' : 'none';
     if (liveBadge) liveBadge.classList.toggle('hidden', !isLive);
+    if (drawerBtn) drawerBtn.classList.remove('hidden');
 
     if (state.playerEngine) {
         try { state.playerEngine.destroy(); } catch (_) {}
@@ -613,7 +677,7 @@ function executePlayerEngine(item, forceProxy = false) {
     let rawUrl = '';
     if (item.type === 'live') {
         rawUrl = `${serverClean}/live/${u}/${p}/${item.id}.m3u8`;
-    } else if (item.type === 'series') {
+    } else if (item.type === 'episode') {
         rawUrl = `${serverClean}/series/${u}/${p}/${item.id}.${item.ext || 'mp4'}`;
     } else {
         rawUrl = `${serverClean}/movie/${u}/${p}/${item.id}.${item.ext || 'mp4'}`;
@@ -621,7 +685,7 @@ function executePlayerEngine(item, forceProxy = false) {
 
     state.activeStreamUrl = rawUrl;
 
-    // Mixed Content Guard: On HTTPS, plain HTTP provider URLs MUST be proxied
+    // Mixed Content Guard: Always proxy HTTP URLs when app is hosted on HTTPS
     const isHttpsApp = window.location.protocol === 'https:';
     const requiresProxy = forceProxy || (isHttpsApp && rawUrl.startsWith('http:'));
     const streamUrl = requiresProxy ? window.auraNative.mediaProxy(rawUrl) : rawUrl;

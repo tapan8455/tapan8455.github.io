@@ -1,4 +1,5 @@
 import { URL } from 'url';
+import { Readable } from 'stream';
 
 function rewriteM3U8(content, baseUrl) {
   try {
@@ -41,7 +42,7 @@ export default async function handler(req, res) {
     return res.status(400).send('Invalid or missing stream URL');
   }
 
-  // SSRF Protection: Deny local/private network addresses
+  // SSRF Protection: Deny local/private addresses
   try {
     const parsed = new URL(target);
     if (/^(localhost|127\.|10\.|192\.168\.|172\.(1[6-9]|2[0-9]|3[0-1])\.|169\.254\.)/i.test(parsed.hostname)) {
@@ -69,6 +70,9 @@ export default async function handler(req, res) {
     if (upstream.headers.get('accept-ranges')) {
       res.setHeader('Accept-Ranges', upstream.headers.get('accept-ranges'));
     }
+    if (upstream.headers.get('content-length')) {
+      res.setHeader('Content-Length', upstream.headers.get('content-length'));
+    }
 
     if (isM3U8) {
       const rawManifest = await upstream.text();
@@ -78,8 +82,16 @@ export default async function handler(req, res) {
     }
 
     res.setHeader('Content-Type', contentType || 'video/mp4');
-    const arrayBuffer = await upstream.arrayBuffer();
-    return res.status(upstream.status).send(Buffer.from(arrayBuffer));
+    res.status(upstream.status);
+
+    if (upstream.body) {
+      const nodeStream = Readable.fromWeb(upstream.body);
+      nodeStream.on('error', () => { try { res.end(); } catch (_) {} });
+      res.on('close', () => { try { nodeStream.destroy(); } catch (_) {} });
+      nodeStream.pipe(res);
+    } else {
+      res.end();
+    }
   } catch (err) {
     return res.status(502).send(`Stream proxy error: ${err.message}`);
   }

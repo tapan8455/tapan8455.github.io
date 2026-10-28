@@ -148,9 +148,16 @@ async function handleStreamProxy(req, res) {
     try { abortController.abort(); } catch (_) {}
   };
 
-  req.on('close', abortUpstream);
-  res.on('close', abortUpstream);
-  res.on('finish', abortUpstream);
+  req.on('close', () => {
+    if (!res.writableEnded) {
+      abortUpstream();
+    }
+  });
+  res.on('close', () => {
+    if (!res.writableEnded) {
+      abortUpstream();
+    }
+  });
 
   try {
     const targetUrl = new URL(target);

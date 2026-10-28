@@ -1106,18 +1106,29 @@ tailwind.config = {
                     '<button onclick="applyFilterPill(\'all\', this)" class="filter-pill px-3 py-1.5 bg-primary text-white text-xs font-bold rounded-lg flex-shrink-0 shadow-md shadow-primary/20 select-none">All</button>' +
                     '<button onclick="applyFilterPill(\'4k\', this)" class="filter-pill px-3 py-1.5 bg-white/5 text-gray-300 hover:text-white hover:bg-white/10 text-xs font-semibold rounded-lg flex-shrink-0 transition-colors select-none">4K / UHD</button>' +
                     '<button onclick="applyFilterPill(\'fhd\', this)" class="filter-pill px-3 py-1.5 bg-white/5 text-gray-300 hover:text-white hover:bg-white/10 text-xs font-semibold rounded-lg flex-shrink-0 transition-colors select-none">FHD</button>';
-                cats.slice(0, 8).forEach(c => {
+                cats.slice(0, 10).forEach(c => {
+                    pillsHtml += '<button onclick="renderGridContent(\'' + jsEsc(c.category_id) + '\', null, \'' + jsEsc(c.category_name) + '\')" class="filter-pill px-3 py-1.5 bg-white/5 text-gray-300 hover:text-white hover:bg-white/10 text-xs font-semibold rounded-lg flex-shrink-0 transition-colors select-none">' + esc(c.category_name) + '</button>';
+                });
+                filterPills.innerHTML = pillsHtml;
+            } else if (tab === 'vod') {
+                let pillsHtml = '<button onclick="toggleSidebar()" class="md:hidden filter-pill px-3 py-1.5 bg-primary/20 text-primary border border-primary/40 text-xs font-bold rounded-lg flex-shrink-0 flex items-center gap-1.5 select-none" style="touch-action: manipulation;"><i class="fa-solid fa-list text-[10px]"></i> Categories (' + cats.length + ')</button>' +
+                    '<button onclick="applyFilterPill(\'all\', this)" class="filter-pill px-3 py-1.5 bg-primary text-white text-xs font-bold rounded-lg flex-shrink-0 shadow-md shadow-primary/20 select-none">All</button>' +
+                    '<button onclick="applyFilterPill(\'popular\', this)" class="filter-pill px-3 py-1.5 bg-white/5 text-gray-300 hover:text-white hover:bg-white/10 text-xs font-semibold rounded-lg flex-shrink-0 transition-colors select-none">Popular</button>' +
+                    '<button onclick="applyFilterPill(\'year\', this)" class="filter-pill px-3 py-1.5 bg-white/5 text-gray-300 hover:text-white hover:bg-white/10 text-xs font-semibold rounded-lg flex-shrink-0 transition-colors select-none">Recent</button>' +
+                    '<button onclick="applyFilterPill(\'4k\', this)" class="filter-pill px-3 py-1.5 bg-white/5 text-gray-300 hover:text-white hover:bg-white/10 text-xs font-semibold rounded-lg flex-shrink-0 transition-colors select-none">4K / UHD</button>';
+                cats.slice(0, 10).forEach(c => {
                     pillsHtml += '<button onclick="renderGridContent(\'' + jsEsc(c.category_id) + '\', null, \'' + jsEsc(c.category_name) + '\')" class="filter-pill px-3 py-1.5 bg-white/5 text-gray-300 hover:text-white hover:bg-white/10 text-xs font-semibold rounded-lg flex-shrink-0 transition-colors select-none">' + esc(c.category_name) + '</button>';
                 });
                 filterPills.innerHTML = pillsHtml;
             } else {
-                filterPills.innerHTML = '<button onclick="toggleSidebar()" class="md:hidden filter-pill px-3 py-1.5 bg-primary/20 text-primary border border-primary/40 text-xs font-bold rounded-lg flex-shrink-0 flex items-center gap-1.5 select-none" style="touch-action: manipulation;"><i class="fa-solid fa-list text-[10px]"></i> Categories</button>' +
+                let pillsHtml = '<button onclick="toggleSidebar()" class="md:hidden filter-pill px-3 py-1.5 bg-primary/20 text-primary border border-primary/40 text-xs font-bold rounded-lg flex-shrink-0 flex items-center gap-1.5 select-none" style="touch-action: manipulation;"><i class="fa-solid fa-list text-[10px]"></i> Categories (' + cats.length + ')</button>' +
                     '<button onclick="applyFilterPill(\'all\', this)" class="filter-pill px-3 py-1.5 bg-primary text-white text-xs font-bold rounded-lg flex-shrink-0 shadow-md shadow-primary/20 select-none">All</button>' +
                     '<button onclick="applyFilterPill(\'popular\', this)" class="filter-pill px-3 py-1.5 bg-white/5 text-gray-300 hover:text-white hover:bg-white/10 text-xs font-semibold rounded-lg flex-shrink-0 transition-colors select-none">Popular</button>' +
-                    '<button onclick="applyFilterPill(\'year\', this)" class="filter-pill px-3 py-1.5 bg-white/5 text-gray-300 hover:text-white hover:bg-white/10 text-xs font-semibold rounded-lg flex-shrink-0 transition-colors select-none">Recent</button>' +
-                    '<button onclick="applyFilterPill(\'4k\', this)" class="filter-pill px-3 py-1.5 bg-white/5 text-gray-300 hover:text-white hover:bg-white/10 text-xs font-semibold rounded-lg flex-shrink-0 transition-colors select-none">4K / UHD</button>' +
-                    '<button onclick="applyFilterPill(\'top\', this)" class="filter-pill px-3 py-1.5 bg-white/5 text-gray-300 hover:text-white hover:bg-white/10 text-xs font-semibold rounded-lg flex-shrink-0 transition-colors select-none">8.0+ <i class="fa-solid fa-star text-[10px] text-yellow-500"></i></button>' +
-                    '<button onclick="applyFilterPill(\'az\', this)" class="filter-pill px-3 py-1.5 bg-white/5 text-gray-300 hover:text-white hover:bg-white/10 text-xs font-semibold rounded-lg flex-shrink-0 transition-colors select-none">A-Z</button>';
+                    '<button onclick="applyFilterPill(\'year\', this)" class="filter-pill px-3 py-1.5 bg-white/5 text-gray-300 hover:text-white hover:bg-white/10 text-xs font-semibold rounded-lg flex-shrink-0 transition-colors select-none">Recent</button>';
+                cats.slice(0, 10).forEach(c => {
+                    pillsHtml += '<button onclick="renderGridContent(\'' + jsEsc(c.category_id) + '\', null, \'' + jsEsc(c.category_name) + '\')" class="filter-pill px-3 py-1.5 bg-white/5 text-gray-300 hover:text-white hover:bg-white/10 text-xs font-semibold rounded-lg flex-shrink-0 transition-colors select-none">' + esc(c.category_name) + '</button>';
+                });
+                filterPills.innerHTML = pillsHtml;
             }
 
             renderSidebarCategories();
@@ -1292,9 +1303,12 @@ tailwind.config = {
                     `;
                 }
                 const cats = state.categories[state.currentTab] || [];
-                // Look through categories until we find one with available streams
-                for (let i = 0; i < Math.min(cats.length, 6); i++) {
+                // Look through categories (up to 25) until we find one with available streams
+                for (let i = 0; i < Math.min(cats.length, 25); i++) {
                     const cat = cats[i];
+                    if (!cat || !cat.category_id || !cat.category_name) continue;
+                    // Skip divider labels like "--- 4K UHD ---"
+                    if (/^[-=_s]+$/.test(cat.category_name) || /^[-s]{2,}/.test(cat.category_name)) continue;
                     const sList = await getCategoryStreams(fetchAction, cat.category_id);
                     if (sList && sList.length > 0) {
                         streams = sList;
@@ -2505,14 +2519,6 @@ tailwind.config = {
         }
 
         function cleanupPlayerResources(videoEl) {
-            // Signal the backend to abort any ongoing streaming connections immediately
-            try {
-                if (navigator.sendBeacon) {
-                    navigator.sendBeacon('/api/stop-stream');
-                } else {
-                    fetch('/api/stop-stream', { method: 'POST', keepalive: true }).catch(() => {});
-                }
-            } catch (_) {}
             if (state.candidateWatchdog) {
                 clearTimeout(state.candidateWatchdog);
                 state.candidateWatchdog = null;
@@ -2634,8 +2640,14 @@ tailwind.config = {
                 const isM3U8 = streamUrl.includes('.m3u8');
                 const proxiedUrl = window.auraNative?.mediaProxy ? window.auraNative.mediaProxy(streamUrl) : streamUrl;
 
-                // Clean up previous candidate engine and release decoded frames before trying next candidate
-                cleanupPlayerResources(video);
+                // Stop previous engine without forcing video element reset
+                if (state.playerEngine) {
+                    try {
+                        if (typeof state.playerEngine.stopLoad === 'function') state.playerEngine.stopLoad();
+                        state.playerEngine.destroy();
+                    } catch (_) {}
+                    state.playerEngine = null;
+                }
                 isAttempting = false;
 
                 // If candidate doesn't begin playing in 6s, smoothly try next candidate
@@ -2900,6 +2912,13 @@ tailwind.config = {
 
         function closePlayer() {
             clearTimeout(controlsTimer);
+            try {
+                if (navigator.sendBeacon) {
+                    navigator.sendBeacon('/api/stop-stream');
+                } else {
+                    fetch('/api/stop-stream', { method: 'POST', keepalive: true }).catch(() => {});
+                }
+            } catch (_) {}
             // Invalidate session — all async callbacks (watchdog, HLS events) will see stale session
             state.playbackSessionId = (state.playbackSessionId || 0) + 1;
             // Clear the active movie so isStreamLive() returns false immediately

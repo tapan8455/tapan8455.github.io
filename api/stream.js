@@ -1,8 +1,8 @@
-// Allow connections to IPTV providers with self-signed SSL certs
-process.env.NODE_TLS_REJECT_UNAUTHORIZED = '0';
-
 import { URL } from 'url';
 import { Readable } from 'stream';
+
+// Allow connections to IPTV providers with self-signed SSL certs
+process.env.NODE_TLS_REJECT_UNAUTHORIZED = '0';
 
 function rewriteM3U8(content, baseUrl) {
   try {

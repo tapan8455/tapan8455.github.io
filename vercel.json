@@ -1,12 +1,9 @@
 {
-  "version": 2,
+  "$schema": "https://openapi.vercel.sh/vercel.json",
+  "outputDirectory": "src",
   "cleanUrls": true,
   "rewrites": [
-    { "source": "/api/request", "destination": "/api/request" },
-    { "source": "/api/test-connection", "destination": "/api/test-connection" },
-    { "source": "/api/stop-stream", "destination": "/api/stop-stream" },
     { "source": "/stream", "destination": "/api/stream" },
-    { "source": "/((?!api/|stream).*)", "destination": "/src/$1" },
-    { "source": "/", "destination": "/src/index.html" }
+    { "source": "/src/:match*", "destination": "/:match*" }
   ]
 }

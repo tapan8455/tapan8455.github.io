@@ -198,6 +198,35 @@
         /* Player bottom gradient */
         .player-gradient { background: linear-gradient(0deg, rgba(0,0,0,0.85) 0%, rgba(0,0,0,0.4) 60%, transparent 100%); }
 
+        /* Player layout & orientation constraints */
+        #player-modal {
+            width: 100vw;
+            height: 100vh;
+            width: 100dvw;
+            height: 100dvh;
+            max-width: 100vw;
+            max-height: 100dvh;
+            box-sizing: border-box;
+        }
+        #player-controls {
+            width: 100%;
+            height: 100%;
+            inset: 0;
+            box-sizing: border-box;
+        }
+        @media (orientation: landscape) and (max-height: 540px) {
+            #player-controls > div:first-child {
+                padding-top: max(env(safe-area-inset-top, 0px), 8px) !important;
+                padding-left: max(env(safe-area-inset-left, 0px), 16px) !important;
+                padding-right: max(env(safe-area-inset-right, 0px), 16px) !important;
+            }
+            #player-controls .player-gradient {
+                padding-bottom: max(env(safe-area-inset-bottom, 0px), 8px) !important;
+                padding-left: max(env(safe-area-inset-left, 0px), 16px) !important;
+                padding-right: max(env(safe-area-inset-right, 0px), 16px) !important;
+            }
+        }
+
         /* Toast notification */
         .aura-toast {
             position: fixed; bottom: 24px; left: 50%; transform: translateX(-50%) translateY(20px);
@@ -1551,7 +1580,22 @@
             state.history = state.history.filter(m => String(m.id) !== String(id));
             localStorage.setItem('aura_history', JSON.stringify(state.history));
             showToast('Removed from Continue Watching');
-            renderGridContent('all');
+            
+            // Optimistic local DOM mutation to prevent full-screen reload or resetting category feeds
+            const targetCard = document.querySelector(`.media-card[data-history-id="${id}"]`);
+            if (targetCard) {
+                targetCard.style.transition = 'all 0.25s ease';
+                targetCard.style.opacity = '0';
+                targetCard.style.transform = 'scale(0.8)';
+                setTimeout(() => {
+                    targetCard.remove();
+                    const carousel = document.getElementById('continue-watching-carousel');
+                    if (carousel && carousel.children.length === 0) {
+                        const sec = document.getElementById('continue-watching-section');
+                        if (sec) sec.remove();
+                    }
+                }, 250);
+            }
         };
 
         window.clearAllHistory = function() {
@@ -1559,7 +1603,14 @@
             state.history = [];
             localStorage.removeItem('aura_history');
             showToast('Continue Watching cleared');
-            renderGridContent('all');
+            
+            // Optimistic local DOM mutation: remove continue watching section directly without re-fetching feeds
+            const sec = document.getElementById('continue-watching-section');
+            if (sec) {
+                sec.style.transition = 'all 0.25s ease';
+                sec.style.opacity = '0';
+                setTimeout(() => sec.remove(), 250);
+            }
         };
 
         function setTab(tab) {
@@ -1784,20 +1835,30 @@
             let streams = [];
 
             if (catId === 'all') {
-                if (state.history.length > 0 && state.currentTab !== 'live') {
+                // Secondary check: Exclude Live TV from Continue Watching in Movies/Series tabs
+                const eligibleHistory = state.history.filter(m => {
+                    if (m.type === 'live' || m.stream_type === 'live') return false;
+                    if (state.currentTab === 'series') return m.type === 'series';
+                    return m.type === 'vod' || !m.type || m.type === 'movie';
+                });
+
+                if (eligibleHistory.length > 0 && state.currentTab !== 'live') {
                     htmlPayload += `
-                        <div class="col-span-full flex items-center justify-between mb-4 mt-2">
-                            <h2 class="font-bold text-white text-lg flex items-center gap-2">
-                                <i class="fa-solid fa-clock-rotate-left text-primary"></i> Continue Watching
-                            </h2>
-                            <button onclick="clearAllHistory()" class="text-xs text-gray-400 hover:text-red-400 flex items-center gap-1.5 px-3 py-1.5 rounded-lg bg-white/5 hover:bg-red-500/10 border border-white/5 hover:border-red-500/20 transition-all font-medium">
-                                <i class="fa-regular fa-trash-can"></i> Clear History
-                            </button>
+                        <div id="continue-watching-section" class="w-full">
+                            <div class="col-span-full flex items-center justify-between mb-4 mt-2">
+                                <h2 class="font-bold text-white text-lg flex items-center gap-2">
+                                    <i class="fa-solid fa-clock-rotate-left text-primary"></i> Continue Watching
+                                </h2>
+                                <button onclick="clearAllHistory()" class="text-xs text-gray-400 hover:text-red-400 flex items-center gap-1.5 px-3 py-1.5 rounded-lg bg-white/5 hover:bg-red-500/10 border border-white/5 hover:border-red-500/20 transition-all font-medium">
+                                    <i class="fa-regular fa-trash-can"></i> Clear History
+                                </button>
+                            </div>
+                            <div id="continue-watching-carousel" class="grid grid-cols-2 sm:grid-cols-3 md:grid-cols-4 lg:grid-cols-5 xl:grid-cols-7 gap-4 md:gap-6 content-start w-full mb-8">
+                                ${eligibleHistory.slice(0, 14).map((s, i) => createCardHTML(s, i, true, false)).join('')}
+                            </div>
+                            <div class="w-full h-px bg-white/5 my-6"></div>
                         </div>
                     `;
-                    const histHtml = state.history.slice(0, 14).map((s, i) => createCardHTML(s, i, true, s.type === 'live')).join('');
-                    htmlPayload += `<div class="grid grid-cols-2 sm:grid-cols-3 md:grid-cols-4 lg:grid-cols-5 xl:grid-cols-7 gap-4 md:gap-6 content-start w-full mb-8">${histHtml}</div>`;
-                    htmlPayload += `<div class="w-full h-px bg-white/5 my-6"></div>`;
                 }
                 const cats = state.categories[state.currentTab] || [];
                 // Look through categories until we find one with available streams
@@ -1962,7 +2023,7 @@
             const clickAction = actualLive ? `playStream('${mStr}')` : `openDetailView('${mStr}')`;
 
             return `
-                <div class="media-card relative group cursor-pointer flex flex-col gap-2 w-full" onclick="${clickAction}">
+                <div class="media-card relative group cursor-pointer flex flex-col gap-2 w-full" ${isHistory ? `data-history-id="${movie.id}"` : ''} onclick="${clickAction}">
                     <div class="${aspect} rounded-xl overflow-hidden relative shadow-lg bg-panelbg border border-white/5">
                         <img src="${movie.img}" data-fallback="${movie.fallbackStr}" loading="lazy" class="${actualLive ? 'w-3/4 h-3/4 object-contain absolute top-1/2 left-1/2 -translate-x-1/2 -translate-y-1/2' : 'w-full h-full object-cover'}" onerror="this.onerror=null;this.src=this.dataset.fallback;">
                         
@@ -2224,6 +2285,7 @@
         }
 
         function hidePlayerError() {
+            state.hasPlaybackError = false;
             const errBox = document.getElementById('player-error');
             if (errBox) errBox.classList.add('hidden');
         }
@@ -2261,6 +2323,53 @@
             }
         }
 
+        function updatePlayerOrientationLayout() {
+            const pm = document.getElementById('player-modal');
+            const pc = document.getElementById('player-controls');
+            if (!pm || pm.classList.contains('hidden')) return;
+
+            const w = window.innerWidth || document.documentElement.clientWidth;
+            const h = window.innerHeight || document.documentElement.clientHeight;
+            const isLandscape = (w > h) || (window.screen?.orientation?.type?.includes('landscape'));
+
+            pm.style.width = '100vw';
+            pm.style.height = '100vh';
+            pm.style.width = '100dvw';
+            pm.style.height = '100dvh';
+
+            if (pc) {
+                pc.style.width = '100%';
+                pc.style.height = '100%';
+                pc.style.top = '0';
+                pc.style.left = '0';
+                pc.style.right = '0';
+                pc.style.bottom = '0';
+            }
+
+            if (isLandscape) {
+                pm.classList.add('is-landscape');
+                pm.classList.remove('is-portrait');
+            } else {
+                pm.classList.add('is-portrait');
+                pm.classList.remove('is-landscape');
+            }
+
+            updateQualityBadgeUI();
+        }
+
+        window.addEventListener('resize', updatePlayerOrientationLayout);
+        window.addEventListener('orientationchange', () => {
+            setTimeout(updatePlayerOrientationLayout, 100);
+        });
+        if (window.screen?.orientation) {
+            window.screen.orientation.addEventListener('change', () => {
+                setTimeout(updatePlayerOrientationLayout, 100);
+            });
+        }
+        if (window.visualViewport) {
+            window.visualViewport.addEventListener('resize', updatePlayerOrientationLayout);
+        }
+
         function toggleNativeFullScreen() {
             if (window.auraNative?.platform !== 'web' && window.auraNative?.toggleFullScreen) {
                 window.auraNative.toggleFullScreen();
@@ -2290,7 +2399,12 @@
                 const target = pm || document.documentElement;
                 const rfs = target.requestFullscreen || target.webkitRequestFullscreen || target.mozRequestFullScreen || target.msRequestFullscreen;
                 if (rfs) {
-                    rfs.call(target).catch(() => {
+                    rfs.call(target).then(() => {
+                        if (screen.orientation && screen.orientation.lock) {
+                            screen.orientation.lock('landscape').catch(() => {});
+                        }
+                        updatePlayerOrientationLayout();
+                    }).catch(() => {
                         if (video && video.webkitEnterFullscreen) {
                             try { video.webkitEnterFullscreen(); } catch (_) {}
                         }
@@ -2300,7 +2414,14 @@
                 }
             } else {
                 const efs = document.exitFullscreen || document.webkitExitFullscreen || document.mozCancelFullScreen || document.msExitFullscreen;
-                if (efs) efs.call(document).catch(() => {});
+                if (efs) {
+                    efs.call(document).then(() => {
+                        if (screen.orientation && screen.orientation.unlock) {
+                            screen.orientation.unlock().catch(() => {});
+                        }
+                        updatePlayerOrientationLayout();
+                    }).catch(() => {});
+                }
             }
         }
 
@@ -2481,8 +2602,8 @@
             if (!movie) return;
             currentActiveMovie = movie;
 
-            // Manage History Array (keep track of movies/episodes/streams)
-            if (movie.id) {
+            // Manage History Array (only track movies/episodes/vod - live channels are non-resumable linear streams)
+            if (movie.id && movie.type !== 'live' && movie.stream_type !== 'live' && state.currentTab !== 'live') {
                 state.history = state.history.filter(m => String(m.id) !== String(movie.id));
                 state.history.unshift(movie);
                 if (state.history.length > 30) state.history.pop();
@@ -2495,6 +2616,7 @@
             void modal.offsetWidth;
             modal.classList.remove('opacity-0');
             modal.classList.add('opacity-100');
+            updatePlayerOrientationLayout();
             
             document.getElementById('player-main-title').textContent = movie.title;
             document.getElementById('player-sub-title').classList.add('hidden');
@@ -2967,12 +3089,19 @@
 
             const el = videoEl || document.getElementById('video-player');
             if (el) {
+                // Temporarily detach onerror while resetting src to prevent artificial onerror dispatch cascades
+                const prevOnError = el.onerror;
+                el.onerror = null;
                 try {
                     el.pause();
                     el.removeAttribute('src');
                     el.srcObject = null;
                     el.load();
                 } catch (_) {}
+                // Restore onerror callback after synchronous reset
+                setTimeout(() => {
+                    if (el && el.onerror === null && prevOnError) el.onerror = prevOnError;
+                }, 0);
             }
         }
 
@@ -2995,7 +3124,7 @@
             const serverClean = getServer();
             const u = encodeURIComponent(config.user);
             const p = encodeURIComponent(config.pass);
-            const isLive = movie.type === 'live';
+            const isLive = movie.type === 'live' || movie.stream_type === 'live' || state.currentTab === 'live';
 
             let urls = [];
             
@@ -3005,16 +3134,20 @@
                 urls.push(`${serverClean}/series/${u}/${p}/${movie.id}.mkv`);
             } else if (isLive) {
                 // Priority list for Live TV in Xtream Codes:
-                // 1. Direct stream without extension (standard universal Xtream Codes live URL format)
-                urls.push(`${serverClean}/${u}/${p}/${movie.id}`);
-                // 2. Direct stream with .ts extension
-                urls.push(`${serverClean}/${u}/${p}/${movie.id}.ts`);
-                // 3. Direct MPEG-TS (.ts) with /live/ prefix
-                urls.push(`${serverClean}/live/${u}/${p}/${movie.id}.ts`);
-                // 4. HLS (.m3u8) with /live/ prefix
-                urls.push(`${serverClean}/live/${u}/${p}/${movie.id}.m3u8`);
-                // 5. HLS (.m3u8) without prefix
-                urls.push(`${serverClean}/${u}/${p}/${movie.id}.m3u8`);
+                // If Hls.js is supported, try HLS (.m3u8) first to leverage adaptive bitrate and instant manifest parsing
+                if (typeof Hls !== 'undefined' && Hls.isSupported()) {
+                    urls.push(`${serverClean}/live/${u}/${p}/${movie.id}.m3u8`);
+                    urls.push(`${serverClean}/${u}/${p}/${movie.id}.m3u8`);
+                    urls.push(`${serverClean}/live/${u}/${p}/${movie.id}.ts`);
+                    urls.push(`${serverClean}/${u}/${p}/${movie.id}.ts`);
+                    urls.push(`${serverClean}/${u}/${p}/${movie.id}`);
+                } else {
+                    urls.push(`${serverClean}/${u}/${p}/${movie.id}`);
+                    urls.push(`${serverClean}/live/${u}/${p}/${movie.id}.ts`);
+                    urls.push(`${serverClean}/${u}/${p}/${movie.id}.ts`);
+                    urls.push(`${serverClean}/live/${u}/${p}/${movie.id}.m3u8`);
+                    urls.push(`${serverClean}/${u}/${p}/${movie.id}.m3u8`);
+                }
             } else {
                 urls.push(`${serverClean}/movie/${u}/${p}/${movie.id}.${movie.ext}`);
                 urls.push(`${serverClean}/movie/${u}/${p}/${movie.id}.mp4`);
@@ -3023,6 +3156,7 @@
 
             urls = [...new Set(urls)];
             let currentAttempt = 0;
+            let isAttempting = false;
 
             const clearWatchdog = () => {
                 if (state.candidateWatchdog) {
@@ -3035,10 +3169,14 @@
 
             function attemptPlay() {
                 if (state.playbackSessionId !== currentSession) return;
+                if (isAttempting) return;
+                isAttempting = true;
                 clearWatchdog();
 
                 if (currentAttempt >= urls.length) {
+                    isAttempting = false;
                     showPlayerSpinner(false);
+                    state.hasPlaybackError = true;
                     showPlayerError(movie, urls[0]);
                     return;
                 }
@@ -3047,21 +3185,28 @@
                 currentAttempt++;
                 state.activeStreamUrl = streamUrl;
 
+                // Update connecting spinner text with candidate attempt info if multiple attempts
+                const spinnerText = document.querySelector('#player-loading-spinner span');
+                if (spinnerText) {
+                    spinnerText.textContent = currentAttempt > 1 ? `Connecting (stream ${currentAttempt}/${urls.length})...` : 'Connecting to stream...';
+                }
+
                 const isM3U8 = streamUrl.includes('.m3u8');
                 const proxiedUrl = window.auraNative?.mediaProxy ? window.auraNative.mediaProxy(streamUrl) : streamUrl;
 
                 // Clean up previous candidate engine and release decoded frames before trying next candidate
                 cleanupPlayerResources(video);
+                isAttempting = false;
 
-                // If candidate doesn't begin playing in 7s, smoothly try next candidate
+                // If candidate doesn't begin playing in 6s, smoothly try next candidate
                 state.candidateWatchdog = setTimeout(() => {
                     if (state.playbackSessionId !== currentSession) return;
                     if (video.paused || video.readyState < 2) {
-                        console.warn(`Candidate ${streamUrl} timed out after 7s, trying next candidate...`);
+                        console.warn(`Candidate ${streamUrl} timed out after 6s, trying next candidate...`);
                         cleanupPlayerResources(video);
                         attemptPlay();
                     }
-                }, 7000);
+                }, 6000);
 
                 try {
                     // 1. If HLS (.m3u8), use Hls.js
@@ -3069,14 +3214,20 @@
                         const hls = new Hls({
                             enableWorker: true,
                             lowLatencyMode: isLive,
-                            backBufferLength: isLive ? 30 : 90,
-                            maxBufferLength: 60,
-                            maxMaxBufferLength: 120,
-                            capLevelToPlayerSize: false, // Ensure full resolution regardless of player window size
-                            manifestLoadingTimeOut: 6000,
-                            manifestLoadingMaxRetry: 1,
+                            backBufferLength: isLive ? 15 : 60,
+                            maxBufferLength: isLive ? 10 : 30, // Lower initial buffer target for live manifests (cuts startup delay!)
+                            maxMaxBufferLength: isLive ? 20 : 60,
+                            liveSyncDurationCount: 2, // Start playback after 2 segments (reduces live stream connection latency)
+                            liveMaxLatencyDurationCount: 5,
+                            liveDurationInfinity: true,
+                            capLevelToPlayerSize: false,
+                            manifestLoadingTimeOut: 8000,
+                            manifestLoadingMaxRetry: 2,
+                            manifestLoadingRetryDelay: 500,
                             fragLoadingTimeOut: 10000,
-                            fragLoadingMaxRetry: 2
+                            fragLoadingMaxRetry: 3,
+                            fragLoadingRetryDelay: 500,
+                            startFragPrefetch: true
                         });
                         state.playerEngine = hls;
                         hls.loadSource(proxiedUrl);
@@ -3120,6 +3271,13 @@
                         hls.on(Hls.Events.LEVEL_SWITCHED, () => {
                             if (state.playbackSessionId !== currentSession) return;
                             updateQualityBadgeUI(hls);
+                        });
+
+                        hls.on(Hls.Events.LEVEL_LOADED, (event, data) => {
+                            if (state.playbackSessionId !== currentSession) return;
+                            if (data && data.details && data.details.live) {
+                                window.onStreamLiveDetected && window.onStreamLiveDetected(data.details);
+                            }
                         });
 
                         hls.on(Hls.Events.ERROR, (event, data) => {
@@ -3211,8 +3369,12 @@
                 if (state.playbackSessionId !== currentSession) return;
                 clearWatchdog();
                 showPlayerSpinner(false);
-                hidePlayerError();
+                // Do not auto-dismiss error dialog if in persistent error state
+                if (!state.hasPlaybackError) {
+                    hidePlayerError();
+                }
                 updateQualityBadgeUI();
+                if (window.onPlayerTimeUpdate) window.onPlayerTimeUpdate();
             };
             video.oncanplay = () => {
                 if (state.playbackSessionId !== currentSession) return;
@@ -3237,6 +3399,8 @@
         }
 
         function showPlayerError(movie, failedUrl) {
+            state.hasPlaybackError = true;
+            showPlayerSpinner(false);
             const errBox = document.getElementById('player-error');
             errBox.classList.remove('hidden');
             
@@ -3284,6 +3448,10 @@
             }
             cleanupPlayerResources(video);
             showPlayerSpinner(false);
+            hidePlayerError();
+            if (screen.orientation && screen.orientation.unlock) {
+                try { screen.orientation.unlock(); } catch (_) {}
+            }
             
             const drawer = document.getElementById('player-drawer');
             if (drawer) drawer.classList.add('translate-x-full');
@@ -3327,20 +3495,120 @@
                 return `${m}:${s.toString().padStart(2, '0')}`;
             };
 
+            const isLiveStream = () => {
+                if (currentActiveMovie) {
+                    if (currentActiveMovie.type === 'live' || currentActiveMovie.stream_type === 'live') return true;
+                }
+                if (state.currentTab === 'live') return true;
+                if (state.playerEngine) {
+                    if (state.playerEngine.liveSyncPosition !== null && state.playerEngine.liveSyncPosition !== undefined) return true;
+                    const curLevel = state.playerEngine.levels?.[state.playerEngine.currentLevel]?.details;
+                    if (curLevel && curLevel.live) return true;
+                    if (state.playerEngine.isLive) return true;
+                }
+                if (video && (video.duration === Infinity || isNaN(video.duration))) return true;
+                return false;
+            };
+
+            let isSeeking = false;
+
+            const updateScrubberMode = () => {
+                const live = isLiveStream();
+                if (live) {
+                    // Check if rolling DVR window is available
+                    let hasDVR = false;
+                    let dvrStart = 0;
+                    let liveEdge = 0;
+                    let dvrWindow = 0;
+                    if (video.seekable && video.seekable.length > 0) {
+                        dvrStart = video.seekable.start(0);
+                        liveEdge = video.seekable.end(video.seekable.length - 1);
+                        dvrWindow = liveEdge - dvrStart;
+                        if (dvrWindow > 60) {
+                            hasDVR = true;
+                        }
+                    }
+
+                    if (hasDVR) {
+                        seekBar.style.display = 'block';
+                        timeCurrent.style.display = 'inline-block';
+                        timeTotal.style.display = 'inline-block';
+                        seekBar.min = dvrStart;
+                        seekBar.max = liveEdge;
+                        if (!isSeeking) {
+                            seekBar.value = video.currentTime;
+                            const offset = video.currentTime - liveEdge;
+                            if (offset >= -5) {
+                                timeCurrent.innerHTML = '<span class="text-red-500 font-bold">● LIVE</span>';
+                            } else {
+                                const abs = Math.abs(Math.round(offset));
+                                const m = Math.floor(abs / 60);
+                                const s = abs % 60;
+                                timeCurrent.textContent = `-${m}:${s.toString().padStart(2, '0')}`;
+                            }
+                            timeTotal.innerHTML = '<span class="text-red-500 font-bold tracking-wider">LIVE</span>';
+                            const pct = Math.min(100, Math.max(0, ((video.currentTime - dvrStart) / (dvrWindow || 1)) * 100));
+                            seekBar.style.background = `linear-gradient(to right, #E50914 ${pct}%, rgba(255,255,255,0.2) ${pct}%)`;
+                        }
+                    } else {
+                        // Non-DVR live stream: hide seekbar and time-current entirely, show LIVE badge
+                        seekBar.style.display = 'none';
+                        timeCurrent.style.display = 'none';
+                        timeTotal.style.display = 'inline-block';
+                        timeTotal.innerHTML = '<span class="inline-flex items-center gap-1.5 px-2.5 py-0.5 rounded-full bg-red-600 text-white font-black text-[10px] tracking-wider uppercase shadow-[0_0_10px_rgba(229,9,20,0.6)]"><i class="fa-solid fa-circle text-[5px] animate-pulse"></i> LIVE</span>';
+                    }
+                } else {
+                    // Standard VOD / series playback
+                    seekBar.style.display = 'block';
+                    timeCurrent.style.display = 'inline-block';
+                    timeTotal.style.display = 'inline-block';
+                    seekBar.min = 0;
+                    if (video.duration && !isNaN(video.duration) && video.duration !== Infinity) {
+                        seekBar.max = video.duration;
+                        timeTotal.textContent = formatTime(video.duration);
+                    }
+                    if (!isSeeking) {
+                        seekBar.value = video.currentTime;
+                        timeCurrent.textContent = formatTime(video.currentTime);
+                        const pct = Math.min(100, Math.max(0, (seekBar.value / (seekBar.max || 1)) * 100));
+                        seekBar.style.background = `linear-gradient(to right, #E50914 ${pct}%, rgba(255,255,255,0.2) ${pct}%)`;
+                    }
+                }
+            };
+
+            window.onStreamLiveDetected = () => updateScrubberMode();
+            window.onPlayerTimeUpdate = () => updateScrubberMode();
+
             video.onplay = () => playBtn.innerHTML = '<i class="fa-solid fa-pause text-2xl md:text-3xl"></i>';
             video.onpause = () => playBtn.innerHTML = '<i class="fa-solid fa-play text-2xl md:text-3xl ml-1"></i>';
             
             playBtn.onclick = () => video.paused ? video.play() : video.pause();
             document.getElementById('rewind-btn').onclick = (e) => {
                 e.stopPropagation();
-                video.currentTime = Math.max(0, video.currentTime - 10);
-                triggerSeekRipple('left');
+                if (isLiveStream()) {
+                    if (video.seekable && video.seekable.length > 0) {
+                        const start = video.seekable.start(0);
+                        video.currentTime = Math.max(start, video.currentTime - 10);
+                        triggerSeekRipple('left');
+                    }
+                } else {
+                    video.currentTime = Math.max(0, video.currentTime - 10);
+                    triggerSeekRipple('left');
+                }
                 window.showPlayerControls && window.showPlayerControls();
             };
             document.getElementById('forward-btn').onclick = (e) => {
                 e.stopPropagation();
-                video.currentTime = Math.min(video.duration || 999999, video.currentTime + 10);
-                triggerSeekRipple('right');
+                if (isLiveStream()) {
+                    if (video.seekable && video.seekable.length > 0) {
+                        const liveEdge = video.seekable.end(video.seekable.length - 1);
+                        video.currentTime = Math.min(liveEdge, video.currentTime + 10);
+                        triggerSeekRipple('right');
+                    }
+                } else {
+                    video.currentTime = Math.min(video.duration || 999999, video.currentTime + 10);
+                    triggerSeekRipple('right');
+                }
                 window.showPlayerControls && window.showPlayerControls();
             };
 
@@ -3356,43 +3624,55 @@
             seekBar.value = 0;
             timeCurrent.textContent = '0:00';
             timeTotal.textContent = '0:00';
+            updateScrubberMode();
             
             video.onloadedmetadata = () => {
-                if (video.duration === Infinity || isNaN(video.duration) || state.currentTab === 'live') {
-                    seekBar.style.display = 'none';
-                    timeTotal.textContent = 'LIVE';
-                } else {
-                    seekBar.style.display = 'block';
-                    seekBar.max = video.duration;
-                    timeTotal.textContent = formatTime(video.duration);
-                }
+                updateScrubberMode();
                 updateQualityBadgeUI();
+            };
+
+            video.ondurationchange = () => {
+                updateScrubberMode();
             };
 
             video.onresize = () => {
                 updateQualityBadgeUI();
+                updatePlayerOrientationLayout();
             };
 
-            let isSeeking = false;
             video.ontimeupdate = () => {
-                if (seekBar.style.display !== 'none' && !isSeeking) {
-                    seekBar.value = video.currentTime; 
-                    timeCurrent.textContent = formatTime(video.currentTime);
-                    const val = (seekBar.value / (seekBar.max || 1)) * 100;
-                    seekBar.style.background = `linear-gradient(to right, #E50914 ${val}%, rgba(255,255,255,0.2) ${val}%)`;
-                }
+                updateScrubberMode();
             };
 
             seekBar.oninput = (e) => { 
                 isSeeking = true;
-                timeCurrent.textContent = formatTime(e.target.value); 
-                const val = (e.target.value / (e.target.max || 1)) * 100;
-                seekBar.style.background = `linear-gradient(to right, #E50914 ${val}%, rgba(255,255,255,0.2) ${val}%)`;
+                const live = isLiveStream();
+                if (live && video.seekable && video.seekable.length > 0) {
+                    const liveEdge = video.seekable.end(video.seekable.length - 1);
+                    const dvrStart = video.seekable.start(0);
+                    const dvrWindow = liveEdge - dvrStart;
+                    const offset = parseFloat(e.target.value) - liveEdge;
+                    if (offset >= -5) {
+                        timeCurrent.innerHTML = '<span class="text-red-500 font-bold">● LIVE</span>';
+                    } else {
+                        const abs = Math.abs(Math.round(offset));
+                        const m = Math.floor(abs / 60);
+                        const s = abs % 60;
+                        timeCurrent.textContent = `-${m}:${s.toString().padStart(2, '0')}`;
+                    }
+                    const pct = Math.min(100, Math.max(0, ((parseFloat(e.target.value) - dvrStart) / (dvrWindow || 1)) * 100));
+                    seekBar.style.background = `linear-gradient(to right, #E50914 ${pct}%, rgba(255,255,255,0.2) ${pct}%)`;
+                } else {
+                    timeCurrent.textContent = formatTime(e.target.value); 
+                    const val = (e.target.value / (e.target.max || 1)) * 100;
+                    seekBar.style.background = `linear-gradient(to right, #E50914 ${val}%, rgba(255,255,255,0.2) ${val}%)`;
+                }
             };
             
             seekBar.onchange = (e) => { 
-                video.currentTime = e.target.value; 
+                video.currentTime = parseFloat(e.target.value); 
                 isSeeking = false;
+                updateScrubberMode();
             };
             
             document.getElementById('fullscreen-btn').onclick = () => toggleNativeFullScreen();

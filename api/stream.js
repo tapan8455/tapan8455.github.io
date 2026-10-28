@@ -1,3 +1,5 @@
+import { URL } from 'url';
+
 function rewriteM3U8(content, baseUrl) {
   try {
     const base = new URL(baseUrl);
@@ -39,7 +41,7 @@ export default async function handler(req, res) {
     return res.status(400).send('Invalid or missing stream URL');
   }
 
-  // SSRF Protection: Deny local/private host targets
+  // SSRF Protection: Deny local/private network addresses
   try {
     const parsed = new URL(target);
     if (/^(localhost|127\.|10\.|192\.168\.|172\.(1[6-9]|2[0-9]|3[0-1])\.|169\.254\.)/i.test(parsed.hostname)) {
@@ -75,7 +77,7 @@ export default async function handler(req, res) {
       return res.status(upstream.status).send(rewritten);
     }
 
-    res.setHeader('Content-Type', contentType || 'video/mp2t');
+    res.setHeader('Content-Type', contentType || 'video/mp4');
     const arrayBuffer = await upstream.arrayBuffer();
     return res.status(upstream.status).send(Buffer.from(arrayBuffer));
   } catch (err) {

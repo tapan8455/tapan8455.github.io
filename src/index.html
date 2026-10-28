@@ -11,15 +11,13 @@
     <meta property="og:type" content="website">
     <meta property="og:title" content="AURA IPTV — Universal Player">
     <meta property="og:description" content="Fast, remote-friendly, privacy-focused IPTV web and desktop player.">
-    <meta property="og:image" content="/icons/icon-512.png">
-    <meta name="twitter:card" content="summary_large_image">
+        <meta name="twitter:card" content="summary_large_image">
     <link rel="canonical" href="https://aura-iptv-universal-web-desktop.vercel.app/">
     
     <!-- PWA Manifest & App Icons -->
-    <link rel="manifest" href="/manifest.webmanifest">
+    <link rel="manifest" href="./manifest.webmanifest">
     <link rel="icon" type="image/svg+xml" href="data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 100 100'%3E%3Crect width='100' height='100' rx='20' fill='%230A0A0A'/%3E%3Cpolygon points='38,28 75,50 38,72' fill='%23E50914'/%3E%3C/svg%3E">
-    <link rel="apple-touch-icon" href="/icons/apple-touch-icon.png">
-
+    
     <!-- Fonts & CDNs -->
     <link rel="preconnect" href="https://fonts.googleapis.com">
     <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
@@ -47,7 +45,7 @@
             }
         }
     </script>
-    <link rel="stylesheet" href="/css/aura.css">
+    <link rel="stylesheet" href="./css/aura.css">
     
     <style>
         /* Mobile font protection against iOS automatic zoom */
@@ -612,17 +610,7 @@
 
     <!-- Application Script Bundles -->
  
-    <script src="/js/aura-app.js" defer></script>
+    <script src="./js/aura-app.js" defer></script>
 	
-    <!-- Register PWA Service Worker -->
-    <script>
-        if ('serviceWorker' in navigator && window.location.protocol.startsWith('http')) {
-            window.addEventListener('load', () => {
-                navigator.serviceWorker.register('/sw.js').catch(err => {
-                    console.warn('[AURA PWA] Service worker registration ignored:', err);
-                });
-            });
-        }
-    </script>
-</body>
+    </body>
 </html>

@@ -15,6 +15,10 @@ if (isHeadlessOrCloud) {
   try {
     const electron = require('electron');
     const child = spawn(electron, ['.'], { stdio: 'inherit' });
+    child.on('error', (err) => {
+      console.log('Electron launch failed (' + err.message + '); starting web server fallback...');
+      require('./server.js');
+    });
     child.on('exit', (code) => process.exit(code || 0));
   } catch (_) {
     console.log('Electron runtime not found; starting web server fallback...');

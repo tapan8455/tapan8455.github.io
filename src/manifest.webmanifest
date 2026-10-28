@@ -1,0 +1,16 @@
+{
+  "name": "AURA IPTV",
+  "short_name": "AURA",
+  "description": "High-performance, private, client-side IPTV player for Web and Desktop.",
+  "start_url": "/",
+  "display": "standalone",
+  "background_color": "#0A0A0A",
+  "theme_color": "#0A0A0A",
+  "icons": [
+    {
+      "src": "data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 100 100'%3E%3Crect width='100' height='100' rx='20' fill='%230A0A0A'/%3E%3Cpolygon points='38,28 75,50 38,72' fill='%23E50914'/%3E%3C/svg%3E",
+      "sizes": "any",
+      "type": "image/svg+xml"
+    }
+  ]
+}

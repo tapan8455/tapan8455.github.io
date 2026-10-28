@@ -34,7 +34,7 @@ if (!window.auraNative) {
         },
         mediaProxy: (url) => {
             if (!url) return '';
-            if (url.startsWith('/stream?url=' process.env.NODE_ENV === 'test')) return url;
+            if (url.startsWith('/stream?url=')) return url;
             return `/stream?url=${encodeURIComponent(url)}`;
         },
         toggleFullScreen: () => {
@@ -88,7 +88,7 @@ function showToast(msg, duration = 2500) {
 }
 
 // State Management
-let config = safeJSON('aura_config', { server: '', user: '', pass: '' });
+let config = safeJSON('aura_config', { server: '', user: '', pass: '', useProxy: false });
 function getServer() {
     return (config.server || '').trim().replace(/\/+$/, '');
 }
@@ -322,6 +322,15 @@ function switchTab(tab) {
         renderFavorites();
         return;
     }
+    if (tab === 'epg') {
+        const timeEl = document.getElementById('epg-current-time-display');
+        if (timeEl) timeEl.textContent = new Date().toLocaleTimeString([], { hour: '2-digit', minute: '2-digit' });
+        const epgContainer = document.getElementById('epg-timeline-container');
+        if (epgContainer && !epgContainer.children.length) {
+            epgContainer.innerHTML = '<div class="flex flex-col items-center justify-center h-full text-center text-gray-500 text-xs p-8"><i class="fa-solid fa-calendar-days text-3xl mb-3 text-gray-600"></i><span>Select a live channel to load EPG guide schedules, or sync your XMLTV provider in Sources.</span></div>';
+        }
+        return;
+    }
 
     renderSidebarCategories();
     loadCategoryStreams('all');
@@ -442,7 +451,11 @@ window.auraApp = {
     setSourceTab,
     testXtreamConnection,
     handleSourceSubmit,
-    openSettingsModal: () => document.getElementById('settings-modal')?.classList.remove('hidden'),
+    openSettingsModal: () => {
+        const toggle = document.getElementById('setting-proxy-toggle');
+        if (toggle) toggle.checked = Boolean(config.useProxy);
+        document.getElementById('settings-modal')?.classList.remove('hidden');
+    },
     closeSettingsModal: () => document.getElementById('settings-modal')?.classList.add('hidden'),
     openKeyboardShortcutsModal: () => document.getElementById('shortcuts-modal')?.classList.remove('hidden'),
     closeKeyboardShortcutsModal: () => document.getElementById('shortcuts-modal')?.classList.add('hidden'),
@@ -482,6 +495,11 @@ window.auraApp = {
         renderActiveFilteredStreams();
     },
     renderSidebarCategories,
+    toggleProxySetting: (enabled) => {
+        config.useProxy = Boolean(enabled);
+        localStorage.setItem('aura_config', JSON.stringify(config));
+        showToast(enabled ? 'Stream proxy enabled' : 'Stream proxy disabled (direct)');
+    },
     jumpEpgToNow: () => showToast('EPG timeline aligned to current broadcast slot')
 };
 
@@ -765,9 +783,9 @@ function executePlayerEngine(item, forceProxy = false) {
 
     state.activeStreamUrl = rawUrl;
 
-    // Mixed Content & CORS: Always proxy via /stream in web browsers
+    // Mixed Content & CORS: Always proxy via /stream in web browsers or when enabled
     const isHttpsApp = window.location.protocol === 'https:';
-    const requiresProxy = forceProxy || isHttpsApp || (window.auraNative.platform === 'web');
+    const requiresProxy = forceProxy || Boolean(config.useProxy) || isHttpsApp || (window.auraNative.platform === 'web');
     const streamUrl = requiresProxy ? window.auraNative.mediaProxy(rawUrl) : rawUrl;
 
     setupVideoEventHandlers(video, item);
@@ -801,6 +819,26 @@ function executePlayerEngine(item, forceProxy = false) {
                 if (spinner) spinner.classList.add('hidden');
                 showPlaybackFailure(item, `HLS decode error: ${data.details}. Try with proxy.`);
             }
+        });
+    } else if ((streamUrl.includes('.ts') || streamUrl.endsWith('.ts')) && typeof mpegts !== 'undefined' && mpegts.isSupported()) {
+        const player = mpegts.createPlayer({
+            type: 'mse',
+            isLive: isLive,
+            url: streamUrl
+        }, {
+            enableWorker: true,
+            lazyLoad: true,
+            lazyLoadMaxDuration: 30,
+            autoCleanupSourceBuffer: true
+        });
+        state.playerEngine = player;
+        player.attachMediaElement(video);
+        player.load();
+        player.play().catch(() => {});
+        player.on(mpegts.Events.ERROR, (_, detail) => {
+            clearTimeout(state.loadingWatchdog);
+            if (spinner) spinner.classList.add('hidden');
+            showPlaybackFailure(item, `MPEG-TS decode error: ${detail}. Try with proxy.`);
         });
     } else {
         video.src = streamUrl;
@@ -938,6 +976,14 @@ window.addEventListener('keydown', (e) => {
 });
 
 // App Startup
-document.addEventListener('DOMContentLoaded', () => {
+function initApp() {
+    const proxyToggle = document.getElementById('setting-proxy-toggle');
+    if (proxyToggle) proxyToggle.checked = Boolean(config.useProxy);
     loadDashboard();
-});
+}
+
+if (document.readyState === 'loading') {
+    document.addEventListener('DOMContentLoaded', initApp);
+} else {
+    initApp();
+}

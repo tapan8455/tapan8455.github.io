@@ -1,3 +1,6 @@
+// Allow connections to IPTV providers with self-signed SSL certs
+process.env.NODE_TLS_REJECT_UNAUTHORIZED = '0';
+
 import { URL } from 'url';
 import { Readable } from 'stream';
 
@@ -45,7 +48,7 @@ export default async function handler(req, res) {
   // SSRF Protection: Deny local/private network addresses
   try {
     const parsed = new URL(target);
-    if (/^(localhost|127\.|10\.|192\.168\.|172\.(1[6-9]|2[0-9]|3[0-1])\.|169\.254\.)/i.test(parsed.hostname)) {
+    if (/^(localhost|127\.|10\.|192\.168\.|172\.(1[6-9]|2[0-9]|3[0-1])\.|169\.254\.|0\.0\.0\.0|::1)/i.test(parsed.hostname)) {
       return res.status(403).send('Restricted destination address');
     }
   } catch (_) {
@@ -53,9 +56,11 @@ export default async function handler(req, res) {
   }
 
   try {
+    const parsedTarget = new URL(target);
     const headers = {
       'User-Agent': 'IPTVSmartersPro/1.0.0 (Macintosh; Intel Mac OS X 10_15_7)',
-      'Accept': '*/*'
+      'Accept': '*/*',
+      'Referer': `${parsedTarget.origin}/`
     };
     if (req.headers.range) headers['Range'] = req.headers.range;
 

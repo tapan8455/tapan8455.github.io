@@ -363,7 +363,7 @@ const server = http.createServer(async (req, res) => {
 
   // Static File Serving
   let filePath = pathname === '/' ? '/index.html' : pathname;
-  let safePath = path.normalize(filePath).replace(/^(\.\.[\/\\])+/, '');
+  let safePath = path.normalize(filePath).replace(/^(\.\.[\/\\])+/, '').replace(/^[/\\]+/, '');
   let fullPath = path.join(__dirname, 'src', safePath);
 
   fs.stat(fullPath, (err, stats) => {

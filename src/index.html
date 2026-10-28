@@ -45,6 +45,43 @@
             user-select: none;
         }
 
+        /* === LANDSCAPE MOBILE FIX ===
+           In landscape on phones the body overflow:hidden clips the content area.
+           Allow the main grid (content area) to scroll independently so channels,
+           series cards and settings are reachable in landscape orientation. */
+        @media (orientation: landscape) and (max-height: 600px) {
+            body { overflow: hidden; }
+            #main-grid,
+            #search-view,
+            #category-list,
+            #drawer-list {
+                -webkit-overflow-scrolling: touch;
+                overflow-y: auto !important;
+            }
+            /* Shrink bottom mobile nav in landscape to reclaim vertical space */
+            #mobile-nav-bar {
+                height: 48px !important;
+                padding-bottom: max(env(safe-area-inset-bottom, 0px), 2px) !important;
+            }
+            /* Compact the header in landscape on phones */
+            header.h-16 {
+                height: 44px !important;
+            }
+            #filter-pills {
+                padding-top: 6px !important;
+                padding-bottom: 6px !important;
+            }
+            /* Sidebar scrollable in landscape */
+            #app-sidebar {
+                overflow-y: auto;
+                -webkit-overflow-scrolling: touch;
+            }
+            /* Main content gets extra bottom padding to clear the nav bar */
+            #main-content {
+                padding-bottom: 52px !important;
+            }
+        }
+
         /* Prevent text selection and iOS system callouts on UI navigation */
         body, button, nav, aside, header, .media-card, .filter-pill, .sidebar-cat-btn, #app-sidebar, #mobile-nav-bar {
             -webkit-touch-callout: none !important;
@@ -137,6 +174,10 @@
         .pr-safe { padding-right: max(env(safe-area-inset-right, 0px), 12px); }
 
         /* Touch & Seek Bar styling */
+        #seek-bar, #volume-bar {
+            /* Prevent iOS scroll interception while dragging the sliders */
+            touch-action: pan-x;
+        }
         #seek-bar {
             -webkit-appearance: none;
             appearance: none;
@@ -333,7 +374,7 @@
     <div id="sidebar-backdrop" onclick="toggleSidebar()" class="fixed inset-0 bg-black/60 backdrop-blur-sm z-40 hidden md:hidden transition-opacity duration-300"></div>
 
     <!-- Main Content Area -->
-    <main class="flex-1 flex flex-col bg-mainbg relative overflow-hidden h-full z-10 w-full pb-16 md:pb-0">
+    <main class="flex-1 flex flex-col bg-mainbg relative overflow-hidden h-full z-10 w-full pb-16 md:pb-0" id="main-content">
         <!-- Top Toolbar -->
         <header class="h-16 flex-shrink-0 flex items-center justify-between px-4 md:px-8 border-b border-white/5 z-20 titlebar-drag">
             <div class="flex items-center gap-4 no-drag w-full">
@@ -886,11 +927,12 @@
         let config = safeJSON('aura_config', { server: '', user: '', pass: '' });
         function getServer() { return (config.server || '').trim().replace(/\/+$/, ''); }
 
-        let searchToken = 0, searchTimer = null, controlsTimer = null, playerBlobUrl = null;
+        let searchToken = 0, searchTimer = null, controlsTimer = null, playerBlobUrl = null, currentActiveMovie = null;
         let tvPrefs = safeJSON('aura_tv_prefs', { setupComplete: false, categories: [], customized: {} });
         let tempTvPrefs = null;
 
         const state = {
+            currentActiveMovie: null,
             categories: { vod: [], live: [], series: [] },
             allLiveCategories: [], 
             categoryMap: {}, 
@@ -1014,22 +1056,24 @@
         }
 
         window.isStreamLive = function() {
-            if (typeof currentActiveMovie !== 'undefined' && currentActiveMovie) {
-                if (currentActiveMovie.type === 'vod' || currentActiveMovie.type === 'series' || currentActiveMovie.type === 'episode') {
-                    return false;
-                }
-                if (currentActiveMovie.type === 'live' || currentActiveMovie.stream_type === 'live' || currentActiveMovie.stream_type === 'live_stream') {
-                    return true;
-                }
+            // 1. Most reliable: check the currently playing movie object
+            const m = currentActiveMovie || state?.currentActiveMovie;
+            if (m) {
+                if (m.type === 'vod' || m.type === 'series' || m.type === 'episode') return false;
+                if (m.type === 'live' || m.stream_type === 'live' || m.stream_type === 'live_stream') return true;
+                // Title heuristic (e.g. "CRIC || WILLOW 2 HD LIVE")
+                if (/\blive\b/i.test(m.title || '') || /\/live\//i.test(m.streamUrl || '')) return true;
             }
+            // 2. Tab is live
             if (typeof state !== 'undefined' && state.currentTab === 'live') return true;
-            if (typeof state !== 'undefined' && (state.playingSeries || state.currentTab === 'vod' || state.currentTab === 'series')) return false;
+            // 3. HLS engine reports live
             if (typeof state !== 'undefined' && state.playerEngine) {
                 if (state.playerEngine.liveSyncPosition !== null && state.playerEngine.liveSyncPosition !== undefined) return true;
                 const curLevel = state.playerEngine.levels?.[state.playerEngine.currentLevel]?.details;
                 if (curLevel && curLevel.live) return true;
                 if (state.playerEngine.isLive) return true;
             }
+            // 4. Video duration is Infinity (definitive live marker)
             const video = document.getElementById('video-player');
             if (video && video.duration === Infinity) return true;
             return false;
@@ -1069,9 +1113,13 @@
             if (!pc || !video) return;
             const isShowing = pc.classList.contains('!opacity-100');
             if (isShowing) {
-                // If controls were opened very recently (< 900ms ago), ignore toggle off
-                // so an immediate second touch or touch on a control doesn't dismiss the bar
-                if (Date.now() - lastControlsOpenedTime < 900) {
+                // If controls were opened very recently (< 1200ms ago), ignore toggle off
+                if (Date.now() - lastControlsOpenedTime < 1200) {
+                    window.showPlayerControls && window.showPlayerControls(true);
+                    return;
+                }
+                // Never auto-dismiss while video is paused
+                if (video.paused) {
                     window.showPlayerControls && window.showPlayerControls(true);
                     return;
                 }
@@ -1080,7 +1128,7 @@
                 clearTimeout(controlsTimer);
                 document.body.style.cursor = 'none';
             } else {
-                // Controls hidden: show them
+                // Controls hidden: show them (do NOT pause/play)
                 window.showPlayerControls && window.showPlayerControls(true);
             }
         }
@@ -1115,13 +1163,17 @@
                 controlsTimer = setTimeout(() => {
                     const drawer = document.getElementById('player-drawer');
                     const drawerClosed = !drawer || drawer.classList.contains('translate-x-full');
-                    // Never auto-hide while paused, while interacting, or while drawer is open
-                    if (!video.paused && !controlInteracting && document.getElementById('player-error').classList.contains('hidden') && drawerClosed) {
+                    // Never auto-hide while paused, while interacting, or while drawer is open,
+                    // or within 4s of the controls being first shown (protects against the
+                    // "controls vanish instantly on stream start" bug on mobile)
+                    const justOpened = (Date.now() - lastControlsOpenedTime) < 3500;
+                    if (!video.paused && !controlInteracting && !justOpened &&
+                        document.getElementById('player-error').classList.contains('hidden') && drawerClosed) {
                         pc.classList.remove('!opacity-100');
                         pc.classList.add('opacity-0');
                         document.body.style.cursor = 'none';
-                    } else if (controlInteracting || !drawerClosed) {
-                        // If still interacting, reschedule
+                    } else if (controlInteracting || !drawerClosed || video.paused || justOpened) {
+                        // If still interacting or paused, reschedule
                         show(true);
                     }
                 }, delay);
@@ -1263,7 +1315,21 @@
                     lastTapTime = now;
                     singleTapTimeout = setTimeout(() => {
                         singleTapTimeout = null;
-                        togglePlayerControls();
+                        // Single tap on video surface: toggle controls visibility only.
+                        // NEVER pause/play from a bare surface tap on mobile — too error-prone.
+                        const isVisible = pc.classList.contains('!opacity-100');
+                        if (!isVisible) {
+                            show(false);
+                        } else if (Date.now() - lastControlsOpenedTime >= 2000 && !controlInteracting) {
+                            // Controls have been showing long enough — dismiss
+                            pc.classList.remove('!opacity-100');
+                            pc.classList.add('opacity-0');
+                            clearTimeout(controlsTimer);
+                            document.body.style.cursor = 'none';
+                        } else {
+                            // Keep visible — reset timer
+                            show(false);
+                        }
                     }, 280);
                 }
             });
@@ -1284,11 +1350,18 @@
             };
             pm.addEventListener('wheel', handleVolWheel, { passive: false });
             
-            // Desktop mouse click: single click shows/keeps controls visible, double click = fullscreen.
-            // NEVER pauses or plays video from bare surface click — playback is controlled ONLY by playBtn / spacebar.
+            // Desktop mouse click: single click shows controls, double click = fullscreen.
+            // NEVER pauses or plays video from bare surface click — playback via playBtn/spacebar only.
+            // On mobile, touchend fires first and sets lastTapTime; a subsequent synthetic click
+            // within 800 ms is ignored to prevent double-toggle.
             let clickTimeout = null;
+            let lastTouchEndTime = 0;
+            pm.addEventListener('touchend', () => { lastTouchEndTime = Date.now(); }, { passive: true, capture: true });
+
             video.addEventListener('click', (e) => {
-                if (Date.now() - lastTapTime < 600) return; // Prevent double firing on touch devices
+                // Block synthetic click generated by mobile touchend (within 800 ms)
+                if (Date.now() - lastTouchEndTime < 800) { e.stopPropagation(); return; }
+                if (Date.now() - lastTapTime < 600) return;
                 if (clickTimeout) {
                     clearTimeout(clickTimeout);
                     clickTimeout = null;
@@ -1296,6 +1369,7 @@
                 } else {
                     clickTimeout = setTimeout(() => {
                         clickTimeout = null;
+                        // Desktop single click: toggle controls — never pause/play
                         togglePlayerControls();
                     }, 250);
                 }
@@ -2435,8 +2509,8 @@
         }
 
         // --- Video Playback Engine & Native Player UX ---
-
-        let currentActiveMovie = null;
+        // NOTE: currentActiveMovie is declared at top-of-script (line ~889) to avoid TDZ.
+        // Do NOT re-declare it here — that causes a SyntaxError that crashes the entire script.
 
         function showPlayerSpinner(show) {
             const el = document.getElementById('player-loading-spinner');
@@ -2981,6 +3055,8 @@
             if (index < 0 || index >= state.currentPlaylist.length) return;
             state.currentIndex = index;
             const ch = state.currentPlaylist[index];
+            currentActiveMovie = ch;
+            state.currentActiveMovie = ch;
             document.getElementById('player-main-title').textContent = ch.title;
             executePlayerEngine(ch);
             setupPlayerDrawerLiveChannels();
@@ -3270,6 +3346,10 @@
             hidePlayerError();
             showPlayerSpinner(true);
 
+            // Track the currently playing movie for isStreamLive() and closePlayer() cleanup
+            currentActiveMovie = movie;
+            state.currentActiveMovie = movie;
+
             // Invalidate any previous playback session and flush GPU video textures/buffers
             cleanupPlayerResources(video);
             state.playbackSessionId = (state.playbackSessionId || 0) + 1;
@@ -3326,6 +3406,8 @@
             };
 
             setupPlayerControls(video);
+            // Update scrubber mode immediately based on currentActiveMovie type
+            if (window.onStreamLiveDetected) window.onStreamLiveDetected();
 
             function attemptPlay() {
                 if (state.playbackSessionId !== currentSession) return;
@@ -3597,7 +3679,11 @@
 
         function closePlayer() {
             clearTimeout(controlsTimer);
+            // Invalidate session — all async callbacks (watchdog, HLS events) will see stale session
             state.playbackSessionId = (state.playbackSessionId || 0) + 1;
+            // Clear the active movie so isStreamLive() returns false immediately
+            currentActiveMovie = null;
+            state.currentActiveMovie = null;
             const video = document.getElementById('video-player');
             if (video) {
                 video.onwaiting = null;

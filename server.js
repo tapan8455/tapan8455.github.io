@@ -1,3 +1,6 @@
+// Allow connections to IPTV providers with self-signed or unverified SSL certificates
+process.env.NODE_TLS_REJECT_UNAUTHORIZED = '0';
+
 const http = require('http');
 const fs = require('fs');
 const path = require('path');
@@ -265,6 +268,8 @@ const server = http.createServer(async (req, res) => {
   if (pathname === '/api/request' && req.method === 'POST') {
     try {
       const body = await parseBody(req);
+      const actionName = body?.action || 'default';
+      console.log(`[AURA API] Request action: "${actionName}" for user: "${body?.user || 'none'}"`);
       const result = await requestJSON(body);
       res.writeHead(200, {
         'Content-Type': 'application/json',
@@ -272,6 +277,7 @@ const server = http.createServer(async (req, res) => {
       });
       res.end(JSON.stringify(result));
     } catch (err) {
+      console.error(`[AURA API Error]: ${err.message}`);
       res.writeHead(500, {
         'Content-Type': 'application/json',
         'Access-Control-Allow-Origin': '*'
@@ -285,6 +291,7 @@ const server = http.createServer(async (req, res) => {
   if (pathname === '/api/test-connection' && req.method === 'POST') {
     try {
       const body = await parseBody(req);
+      console.log(`[AURA Test Connection] Server: ${body?.server} | User: ${body?.user}`);
       const result = await requestJSON({ ...body, action: '' });
       if (result && result.user_info) {
         if (result.user_info.auth === 0) {
@@ -296,6 +303,7 @@ const server = http.createServer(async (req, res) => {
       res.writeHead(200, { 'Content-Type': 'application/json', 'Access-Control-Allow-Origin': '*' });
       res.end(JSON.stringify({ success: true, data: result }));
     } catch (err) {
+      console.error(`[AURA Test Connection Error]: ${err.message}`);
       res.writeHead(200, { 'Content-Type': 'application/json', 'Access-Control-Allow-Origin': '*' });
       res.end(JSON.stringify({ success: false, error: err.message }));
     }

@@ -939,13 +939,17 @@
 
         function togglePlayerControls() {
             const pc = document.getElementById('player-controls');
-            if (!pc) return;
+            const video = document.getElementById('video-player');
+            if (!pc || !video) return;
             const isShowing = pc.classList.contains('!opacity-100');
             if (isShowing) {
+                // Controls visible: hide them AND toggle play/pause
                 pc.classList.remove('!opacity-100');
                 pc.classList.add('opacity-0');
                 clearTimeout(controlsTimer);
+                video.paused ? video.play().catch(() => {}) : video.pause();
             } else {
+                // Controls hidden: just show them first (next tap will play/pause)
                 window.showPlayerControls && window.showPlayerControls();
             }
         }
@@ -1050,7 +1054,7 @@
             };
             pm.addEventListener('wheel', handleVolWheel, { passive: false });
             
-            // Desktop mouse click fallback
+            // Desktop mouse click: single click = play/pause + show controls, double click = fullscreen
             let clickTimeout = null;
             video.addEventListener('click', (e) => {
                 if (Date.now() - lastTapTime < 600) return; // Prevent double firing on touch devices
@@ -1061,7 +1065,9 @@
                 } else {
                     clickTimeout = setTimeout(() => {
                         clickTimeout = null;
-                        togglePlayerControls();
+                        // Single click: toggle play/pause and show controls
+                        show();
+                        video.paused ? video.play().catch(() => {}) : video.pause();
                     }, 250);
                 }
             });

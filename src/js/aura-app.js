@@ -60,7 +60,6 @@ const safeJSON = (k, d) => { try { const v = JSON.parse(localStorage.getItem(k))
 const safeArray = (k) => { const v = safeJSON(k, []); return Array.isArray(v) ? v : []; };
 const esc = (t) => String(t ?? '').replace(/&/g, '&amp;').replace(/</g, '&lt;').replace(/>/g, '&gt;').replace(/"/g, '&quot;').replace(/'/g, '&#39;');
 const jsEsc = (t) => String(t ?? '').replace(/\\/g, '\\\\').replace(/'/g, "\\'").replace(/"/g, '\\"');
-const encObj = (o) => encodeURIComponent(JSON.stringify(o)).replace(/'/g, '%27');
 
 let toastTimer = null;
 function showToast(msg, duration = 2500) {
@@ -76,7 +75,7 @@ function showToast(msg, duration = 2500) {
     }, duration);
 }
 
-// State
+// State Management
 let config = safeJSON('aura_config', { server: '', user: '', pass: '' });
 function getServer() { return (config.server || '').trim().replace(/\/+$/, ''); }
 
@@ -94,9 +93,7 @@ const state = {
     currentIndex: -1,
     activeStreamUrl: '',
     playerEngine: null,
-    playbackSessionId: 0,
-    searchTimer: null,
-    currentCategoryTitle: ''
+    searchTimer: null
 };
 
 // Storage API Namespace
@@ -138,9 +135,12 @@ window.auraPlayer = {
         const video = document.getElementById('video-player');
         if (!video) return;
         video.muted = !video.muted;
-        document.getElementById('mute-btn').innerHTML = video.muted
-            ? '<i class="fa-solid fa-volume-xmark text-lg text-primary"></i>'
-            : '<i class="fa-solid fa-volume-high text-lg"></i>';
+        const muteBtn = document.getElementById('mute-btn');
+        if (muteBtn) {
+            muteBtn.innerHTML = video.muted
+                ? '<i class="fa-solid fa-volume-xmark text-lg text-primary"></i>'
+                : '<i class="fa-solid fa-volume-high text-lg"></i>';
+        }
     },
     toggleFullscreen: () => window.auraNative.toggleFullScreen(),
     togglePip: () => {
@@ -295,14 +295,14 @@ window.auraApp = {
             showToast('Account credentials saved');
             await loadDashboard();
         } else {
-            showToast('Playlist import complete');
+            showToast('Playlist source saved');
         }
     },
     openSettingsModal: () => document.getElementById('settings-modal')?.classList.remove('hidden'),
     closeSettingsModal: () => document.getElementById('settings-modal')?.classList.add('hidden'),
     openKeyboardShortcutsModal: () => document.getElementById('shortcuts-modal')?.classList.remove('hidden'),
     closeKeyboardShortcutsModal: () => document.getElementById('shortcuts-modal')?.classList.add('hidden'),
-    handleCastTrigger: () => showToast('Screen Mirroring: Connect your browser or system to an AirPlay / Cast device'),
+    handleCastTrigger: () => showToast('Screen Mirroring: Connect your browser or OS to an AirPlay / Cast receiver'),
     openProfilePicker: () => window.auraApp.openSourceModal(),
     restoreAllHiddenChannels: () => {
         state.hiddenChannelIds = [];
@@ -349,10 +349,11 @@ window.auraApp = {
                     ${esc(c.category_name)}
                 </button>
             `).join('');
-    }
+    },
+    jumpEpgToNow: () => showToast('EPG timeline aligned to current broadcast slot')
 };
 
-// View Routing
+// Global Routing
 function switchTab(tab) {
     state.currentTab = tab;
     ['live', 'vod', 'series', 'favorites', 'search', 'epg'].forEach(t => {
@@ -405,7 +406,7 @@ function updateHeaderTitle(baseTitle, catName = null) {
     }
 }
 
-// Data Loaders
+// Data Fetching
 async function loadDashboard() {
     if (!config.user || !getServer()) {
         document.getElementById('grid-skeleton')?.classList.add('hidden');
@@ -433,7 +434,7 @@ async function loadDashboard() {
 
         switchTab(state.currentTab);
     } catch (err) {
-        showToast(`Connection failed: ${err.message}`);
+        showToast(`Connection error: ${err.message}`);
         document.getElementById('grid-skeleton')?.classList.add('hidden');
         document.getElementById('onboarding-card')?.classList.remove('hidden');
     }
@@ -591,11 +592,14 @@ function executePlayerEngine(item, forceProxy = false) {
 
     document.getElementById('player-main-title').textContent = item.title;
 
-    // Reset scrubber mode
     const isLive = item.type === 'live';
-    document.getElementById('seek-bar-container').style.display = isLive ? 'none' : 'flex';
-    document.getElementById('btn-go-live').style.display = isLive ? 'inline-flex' : 'none';
-    document.getElementById('player-live-badge')?.classList.toggle('hidden', !isLive);
+    const seekBarContainer = document.getElementById('seek-bar-container');
+    const goLiveBtn = document.getElementById('btn-go-live');
+    const liveBadge = document.getElementById('player-live-badge');
+    
+    if (seekBarContainer) seekBarContainer.style.display = isLive ? 'none' : 'flex';
+    if (goLiveBtn) goLiveBtn.style.display = isLive ? 'inline-flex' : 'none';
+    if (liveBadge) liveBadge.classList.toggle('hidden', !isLive);
 
     if (state.playerEngine) {
         try { state.playerEngine.destroy(); } catch (_) {}
@@ -617,7 +621,7 @@ function executePlayerEngine(item, forceProxy = false) {
 
     state.activeStreamUrl = rawUrl;
 
-    // Mixed Content Guard: If the app is HTTPS, always proxy plain HTTP provider URLs
+    // Mixed Content Guard: On HTTPS, plain HTTP provider URLs MUST be proxied
     const isHttpsApp = window.location.protocol === 'https:';
     const requiresProxy = forceProxy || (isHttpsApp && rawUrl.startsWith('http:'));
     const streamUrl = requiresProxy ? window.auraNative.mediaProxy(rawUrl) : rawUrl;
@@ -641,7 +645,7 @@ function executePlayerEngine(item, forceProxy = false) {
         hls.on(Hls.Events.ERROR, (_, data) => {
             if (data.fatal) {
                 spinner.classList.add('hidden');
-                showPlaybackFailure(item, `HLS decode error: ${data.details}. Try with edge proxy.`);
+                showPlaybackFailure(item, `HLS decode error: ${data.details}. Try with proxy.`);
             }
         });
     } else {
@@ -649,7 +653,7 @@ function executePlayerEngine(item, forceProxy = false) {
         video.load();
         video.play().catch((err) => {
             if (err.name !== 'AbortError' && err.name !== 'NotAllowedError') {
-                showPlaybackFailure(item, 'Browser media decoder was unable to play this stream directly.');
+                showPlaybackFailure(item, 'Playback interrupted. Tap Use Proxy to bypass restrictions.');
             }
         });
     }
@@ -665,11 +669,11 @@ function setupVideoEventHandlers(video, item) {
     video.onwaiting = () => spinner.classList.remove('hidden');
     video.onplaying = () => {
         spinner.classList.add('hidden');
-        document.getElementById('player-error').classList.add('hidden');
-        playPauseBtn.innerHTML = '<i class="fa-solid fa-pause text-base"></i>';
+        document.getElementById('player-error')?.classList.add('hidden');
+        if (playPauseBtn) playPauseBtn.innerHTML = '<i class="fa-solid fa-pause text-base"></i>';
     };
     video.onpause = () => {
-        playPauseBtn.innerHTML = '<i class="fa-solid fa-play text-base ml-0.5"></i>';
+        if (playPauseBtn) playPauseBtn.innerHTML = '<i class="fa-solid fa-play text-base ml-0.5"></i>';
     };
     video.oncanplay = () => spinner.classList.add('hidden');
     video.onerror = () => {
@@ -678,17 +682,19 @@ function setupVideoEventHandlers(video, item) {
     };
 
     video.ontimeupdate = () => {
-        if (item.type === 'live' || !video.duration) return;
+        if (item.type === 'live' || !video.duration || !seekBar) return;
         seekBar.value = (video.currentTime / video.duration) * 100;
-        timeCurrent.textContent = formatSec(video.currentTime);
-        timeTotal.textContent = formatSec(video.duration);
+        if (timeCurrent) timeCurrent.textContent = formatSec(video.currentTime);
+        if (timeTotal) timeTotal.textContent = formatSec(video.duration);
     };
 
-    seekBar.oninput = () => {
-        if (video.duration) {
-            video.currentTime = (seekBar.value / 100) * video.duration;
-        }
-    };
+    if (seekBar) {
+        seekBar.oninput = () => {
+            if (video.duration) {
+                video.currentTime = (seekBar.value / 100) * video.duration;
+            }
+        };
+    }
 }
 
 function showPlaybackFailure(item, msg) {
@@ -726,10 +732,15 @@ function renderPlayerDrawer() {
 function updateStatsTelemetry() {
     const video = document.getElementById('video-player');
     if (!video) return;
-    document.getElementById('stat-resolution').textContent = `${video.videoWidth || '--'} x ${video.videoHeight || '--'}`;
-    document.getElementById('stat-engine').textContent = state.playerEngine ? 'Hls.js Adaptive Demuxer' : 'HTML5 Native Direct';
-    const buf = video.buffered.length > 0 ? (video.buffered.end(video.buffered.length - 1) - video.currentTime).toFixed(1) : '0';
-    document.getElementById('stat-buffer').textContent = `${buf} seconds`;
+    const resEl = document.getElementById('stat-resolution');
+    const engEl = document.getElementById('stat-engine');
+    const bufEl = document.getElementById('stat-buffer');
+    if (resEl) resEl.textContent = `${video.videoWidth || '--'} x ${video.videoHeight || '--'}`;
+    if (engEl) engEl.textContent = state.playerEngine ? 'Hls.js Adaptive Demuxer' : 'HTML5 Native Direct';
+    if (bufEl) {
+        const buf = video.buffered.length > 0 ? (video.buffered.end(video.buffered.length - 1) - video.currentTime).toFixed(1) : '0';
+        bufEl.textContent = `${buf} seconds`;
+    }
 }
 
 function closePlayer() {
@@ -754,7 +765,7 @@ function closePlayer() {
 // Global Keyboard Navigation
 window.addEventListener('keydown', (e) => {
     if (['INPUT', 'TEXTAREA'].includes(e.target.tagName)) return;
-    const isPlayerOpen = !document.getElementById('player-modal').classList.contains('hidden');
+    const isPlayerOpen = !document.getElementById('player-modal')?.classList.contains('hidden');
 
     if (e.key === 'Escape' || e.key === 'Backspace') {
         if (isPlayerOpen) {

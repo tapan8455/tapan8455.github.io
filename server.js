@@ -111,8 +111,10 @@ async function requestJSON({ server, user, pass, action, params = '' }) {
   throw lastError;
 }
 
+const activeStreams = new Set();
+
 async function handleStreamProxy(req, res) {
-  const reqUrl = new URL(req.url, `http://${req.headers.host || 'localhost'}`);
+  const reqUrl = new URL(req.url, 'http://' + (req.headers.host || 'localhost'));
   let target = reqUrl.searchParams.get('url');
 
   if (!target) {
@@ -135,12 +137,27 @@ async function handleStreamProxy(req, res) {
     return;
   }
 
+  const abortController = new AbortController();
+  activeStreams.add(abortController);
+
+  let isCleanedUp = false;
+  const abortUpstream = () => {
+    if (isCleanedUp) return;
+    isCleanedUp = true;
+    activeStreams.delete(abortController);
+    try { abortController.abort(); } catch (_) {}
+  };
+
+  req.on('close', abortUpstream);
+  res.on('close', abortUpstream);
+  res.on('finish', abortUpstream);
+
   try {
     const targetUrl = new URL(target);
     const headers = {
       'User-Agent': 'IPTVSmartersPro/1.0.0 (Macintosh; Intel Mac OS X 10_15_7)',
       'Accept': '*/*',
-      'Referer': `${targetUrl.origin}/`
+      'Referer': targetUrl.origin + '/'
     };
 
     if (req.headers['range']) {
@@ -150,18 +167,21 @@ async function handleStreamProxy(req, res) {
     const upstream = await fetch(targetUrl.toString(), {
       method: req.method || 'GET',
       headers,
-      redirect: 'follow'
+      redirect: 'follow',
+      signal: abortController.signal
     });
 
     const contentType = (upstream.headers.get('content-type') || '').toLowerCase();
     const finalUrlStr = upstream.url || targetUrl.toString();
     let finalPathname = '';
-    try { finalPathname = new URL(finalUrlStr).pathname; } catch (_) {}
+    try { finalPathname = new URL(finalUrlStr).pathname.toLowerCase(); } catch (_) {}
+    const targetPathname = targetUrl.pathname.toLowerCase();
 
-    const isM3U8 = targetUrl.pathname.endsWith('.m3u8') ||
+    const isM3U8 = targetPathname.endsWith('.m3u8') ||
                    finalPathname.endsWith('.m3u8') ||
                    contentType.includes('mpegurl') ||
-                   contentType.includes('application/x-mpegurl');
+                   contentType.includes('application/x-mpegurl') ||
+                   contentType.includes('vnd.apple.mpegurl');
 
     const outHeaders = {
       'Access-Control-Allow-Origin': '*',
@@ -186,14 +206,15 @@ async function handleStreamProxy(req, res) {
       delete outHeaders['Content-Length'];
       res.writeHead(upstream.status, outHeaders);
       res.end(rewritten);
+      abortUpstream();
       return;
     }
 
-    if (finalPathname.endsWith('.mp4') || targetUrl.pathname.endsWith('.mp4')) {
+    if (finalPathname.endsWith('.mp4') || targetPathname.endsWith('.mp4')) {
       outHeaders['Content-Type'] = 'video/mp4';
-    } else if (finalPathname.endsWith('.mkv') || targetUrl.pathname.endsWith('.mkv')) {
+    } else if (finalPathname.endsWith('.mkv') || targetPathname.endsWith('.mkv')) {
       outHeaders['Content-Type'] = 'video/x-matroska';
-    } else if (finalPathname.endsWith('.ts') || targetUrl.pathname.endsWith('.ts')) {
+    } else if (finalPathname.endsWith('.ts') || targetPathname.endsWith('.ts')) {
       outHeaders['Content-Type'] = 'video/mp2t';
     } else if (contentType) {
       outHeaders['Content-Type'] = contentType;
@@ -203,14 +224,22 @@ async function handleStreamProxy(req, res) {
 
     if (upstream.body) {
       const { Readable } = require('stream');
-      Readable.fromWeb(upstream.body).pipe(res);
+      const nodeStream = Readable.fromWeb(upstream.body);
+      nodeStream.on('error', abortUpstream);
+      res.on('error', abortUpstream);
+      nodeStream.pipe(res);
     } else {
       res.end();
+      abortUpstream();
     }
   } catch (err) {
+    abortUpstream();
+    if (err.name === 'AbortError' || abortController.signal.aborted) {
+      return;
+    }
     if (!res.headersSent) {
       res.writeHead(502, { 'Content-Type': 'text/plain', 'Access-Control-Allow-Origin': '*' });
-      res.end(`Stream proxy error: ${err.message}`);
+      res.end('Stream proxy error: ' + err.message);
     }
   }
 }
@@ -255,6 +284,21 @@ const server = http.createServer(async (req, res) => {
   if (pathname === '/health' || pathname === '/ping') {
     res.writeHead(200, { 'Content-Type': 'application/json' });
     res.end(JSON.stringify({ status: 'ok', app: 'AURA IPTV Web Server', time: new Date().toISOString() }));
+    return;
+  }
+
+  // API Stop All Active Streams (cancels old upstream streams from IPTV provider)
+  if (pathname === '/api/stop-stream' && (req.method === 'POST' || req.method === 'GET')) {
+    let stoppedCount = 0;
+    for (const controller of activeStreams) {
+      try {
+        controller.abort();
+        stoppedCount++;
+      } catch (_) {}
+    }
+    activeStreams.clear();
+    res.writeHead(200, { 'Content-Type': 'application/json', 'Access-Control-Allow-Origin': '*' });
+    res.end(JSON.stringify({ success: true, stopped: stoppedCount }));
     return;
   }
 

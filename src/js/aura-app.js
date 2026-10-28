@@ -1100,6 +1100,26 @@ tailwind.config = {
             const titles = { live: 'TV Live', vod: 'Movies', series: 'Series' };
             document.getElementById('hub-title').innerHTML = titles[tab] || 'Movies';
 
+            const cats = state.categories[tab] || [];
+            if (tab === 'live') {
+                let pillsHtml = '<button onclick="toggleSidebar()" class="md:hidden filter-pill px-3 py-1.5 bg-primary/20 text-primary border border-primary/40 text-xs font-bold rounded-lg flex-shrink-0 flex items-center gap-1.5 select-none" style="touch-action: manipulation;"><i class="fa-solid fa-list text-[10px]"></i> Categories (' + cats.length + ')</button>' +
+                    '<button onclick="applyFilterPill(\'all\', this)" class="filter-pill px-3 py-1.5 bg-primary text-white text-xs font-bold rounded-lg flex-shrink-0 shadow-md shadow-primary/20 select-none">All</button>' +
+                    '<button onclick="applyFilterPill(\'4k\', this)" class="filter-pill px-3 py-1.5 bg-white/5 text-gray-300 hover:text-white hover:bg-white/10 text-xs font-semibold rounded-lg flex-shrink-0 transition-colors select-none">4K / UHD</button>' +
+                    '<button onclick="applyFilterPill(\'fhd\', this)" class="filter-pill px-3 py-1.5 bg-white/5 text-gray-300 hover:text-white hover:bg-white/10 text-xs font-semibold rounded-lg flex-shrink-0 transition-colors select-none">FHD</button>';
+                cats.slice(0, 8).forEach(c => {
+                    pillsHtml += '<button onclick="renderGridContent(\'' + jsEsc(c.category_id) + '\', null, \'' + jsEsc(c.category_name) + '\')" class="filter-pill px-3 py-1.5 bg-white/5 text-gray-300 hover:text-white hover:bg-white/10 text-xs font-semibold rounded-lg flex-shrink-0 transition-colors select-none">' + esc(c.category_name) + '</button>';
+                });
+                filterPills.innerHTML = pillsHtml;
+            } else {
+                filterPills.innerHTML = '<button onclick="toggleSidebar()" class="md:hidden filter-pill px-3 py-1.5 bg-primary/20 text-primary border border-primary/40 text-xs font-bold rounded-lg flex-shrink-0 flex items-center gap-1.5 select-none" style="touch-action: manipulation;"><i class="fa-solid fa-list text-[10px]"></i> Categories</button>' +
+                    '<button onclick="applyFilterPill(\'all\', this)" class="filter-pill px-3 py-1.5 bg-primary text-white text-xs font-bold rounded-lg flex-shrink-0 shadow-md shadow-primary/20 select-none">All</button>' +
+                    '<button onclick="applyFilterPill(\'popular\', this)" class="filter-pill px-3 py-1.5 bg-white/5 text-gray-300 hover:text-white hover:bg-white/10 text-xs font-semibold rounded-lg flex-shrink-0 transition-colors select-none">Popular</button>' +
+                    '<button onclick="applyFilterPill(\'year\', this)" class="filter-pill px-3 py-1.5 bg-white/5 text-gray-300 hover:text-white hover:bg-white/10 text-xs font-semibold rounded-lg flex-shrink-0 transition-colors select-none">Recent</button>' +
+                    '<button onclick="applyFilterPill(\'4k\', this)" class="filter-pill px-3 py-1.5 bg-white/5 text-gray-300 hover:text-white hover:bg-white/10 text-xs font-semibold rounded-lg flex-shrink-0 transition-colors select-none">4K / UHD</button>' +
+                    '<button onclick="applyFilterPill(\'top\', this)" class="filter-pill px-3 py-1.5 bg-white/5 text-gray-300 hover:text-white hover:bg-white/10 text-xs font-semibold rounded-lg flex-shrink-0 transition-colors select-none">8.0+ <i class="fa-solid fa-star text-[10px] text-yellow-500"></i></button>' +
+                    '<button onclick="applyFilterPill(\'az\', this)" class="filter-pill px-3 py-1.5 bg-white/5 text-gray-300 hover:text-white hover:bg-white/10 text-xs font-semibold rounded-lg flex-shrink-0 transition-colors select-none">A-Z</button>';
+            }
+
             renderSidebarCategories();
             renderGridContent('all');
         }
@@ -1181,6 +1201,8 @@ tailwind.config = {
             const f = state.currentFilterPill;
             if (f === '4k') {
                 list = list.filter(s => /4k|uhd|2160p|hdr/i.test(s.title));
+            } else if (f === 'fhd') {
+                list = list.filter(s => /fhd|1080p/i.test(s.title));
             } else if (f === 'popular') {
                 list.sort((a, b) => (b.ratingNum || 0) - (a.ratingNum || 0));
             } else if (f === 'year') {
@@ -2483,6 +2505,14 @@ tailwind.config = {
         }
 
         function cleanupPlayerResources(videoEl) {
+            // Signal the backend to abort any ongoing streaming connections immediately
+            try {
+                if (navigator.sendBeacon) {
+                    navigator.sendBeacon('/api/stop-stream');
+                } else {
+                    fetch('/api/stop-stream', { method: 'POST', keepalive: true }).catch(() => {});
+                }
+            } catch (_) {}
             if (state.candidateWatchdog) {
                 clearTimeout(state.candidateWatchdog);
                 state.candidateWatchdog = null;
@@ -2550,20 +2580,12 @@ tailwind.config = {
                 urls.push(`${serverClean}/series/${u}/${p}/${movie.id}.mkv`);
             } else if (isLive) {
                 // Priority list for Live TV in Xtream Codes:
-                // If Hls.js is supported, try HLS (.m3u8) first to leverage adaptive bitrate and instant manifest parsing
-                if (typeof Hls !== 'undefined' && Hls.isSupported()) {
-                    urls.push(`${serverClean}/live/${u}/${p}/${movie.id}.m3u8`);
-                    urls.push(`${serverClean}/${u}/${p}/${movie.id}.m3u8`);
-                    urls.push(`${serverClean}/live/${u}/${p}/${movie.id}.ts`);
-                    urls.push(`${serverClean}/${u}/${p}/${movie.id}.ts`);
-                    urls.push(`${serverClean}/${u}/${p}/${movie.id}`);
-                } else {
-                    urls.push(`${serverClean}/${u}/${p}/${movie.id}`);
-                    urls.push(`${serverClean}/live/${u}/${p}/${movie.id}.ts`);
-                    urls.push(`${serverClean}/${u}/${p}/${movie.id}.ts`);
-                    urls.push(`${serverClean}/live/${u}/${p}/${movie.id}.m3u8`);
-                    urls.push(`${serverClean}/${u}/${p}/${movie.id}.m3u8`);
-                }
+                // HLS (.m3u8) first universally (Hls.js on Chrome/Firefox/Edge/Android, Native AVPlayer on Safari/iOS)
+                urls.push(`${serverClean}/live/${u}/${p}/${movie.id}.m3u8`);
+                urls.push(`${serverClean}/${u}/${p}/${movie.id}.m3u8`);
+                urls.push(`${serverClean}/live/${u}/${p}/${movie.id}.ts`);
+                urls.push(`${serverClean}/${u}/${p}/${movie.id}.ts`);
+                urls.push(`${serverClean}/${u}/${p}/${movie.id}`);
             } else {
                 urls.push(`${serverClean}/movie/${u}/${p}/${movie.id}.${movie.ext}`);
                 urls.push(`${serverClean}/movie/${u}/${p}/${movie.id}.mp4`);
@@ -2620,106 +2642,129 @@ tailwind.config = {
                 state.candidateWatchdog = setTimeout(() => {
                     if (state.playbackSessionId !== currentSession) return;
                     if (video.paused || video.readyState < 2) {
-                        console.warn(`Candidate ${streamUrl} timed out after 6s, trying next candidate...`);
+                        console.warn(`Candidate ${streamUrl} timed out after 10s, trying next candidate...`);
                         cleanupPlayerResources(video);
                         attemptPlay();
                     }
-                }, 6000);
+                }, 10000);
 
                 try {
-                    // 1. If HLS (.m3u8), use Hls.js
-                    if (isM3U8 && typeof Hls !== 'undefined' && Hls.isSupported()) {
-                        const hls = new Hls({
-                            enableWorker: true,
-                            lowLatencyMode: isLive,
-                            backBufferLength: isLive ? 15 : 60,
-                            maxBufferLength: isLive ? 10 : 30, // Lower initial buffer target for live manifests (cuts startup delay!)
-                            maxMaxBufferLength: isLive ? 20 : 60,
-                            liveSyncDurationCount: 2, // Start playback after 2 segments (reduces live stream connection latency)
-                            liveMaxLatencyDurationCount: 5,
-                            liveDurationInfinity: true,
-                            capLevelToPlayerSize: false,
-                            manifestLoadingTimeOut: 8000,
-                            manifestLoadingMaxRetry: 2,
-                            manifestLoadingRetryDelay: 500,
-                            fragLoadingTimeOut: 10000,
-                            fragLoadingMaxRetry: 3,
-                            fragLoadingRetryDelay: 500,
-                            startFragPrefetch: true
-                        });
-                        state.playerEngine = hls;
-                        hls.loadSource(proxiedUrl);
-                        hls.attachMedia(video);
+                    // 1. If HLS (.m3u8), use Hls.js or Native Apple HLS
+                    const canNativeHls = video.canPlayType && !!video.canPlayType('application/vnd.apple.mpegurl');
+                    if (isM3U8) {
+                        if (typeof Hls !== 'undefined' && Hls.isSupported()) {
+                            const hls = new Hls({
+                                enableWorker: true,
+                                lowLatencyMode: false, // Standard IPTV streams need reliable buffer; false prevents underruns
+                                backBufferLength: 30,
+                                maxBufferLength: 30,
+                                maxMaxBufferLength: 60,
+                                liveSyncDurationCount: 3, // 3 segments sync distance provides stable continuous playback
+                                liveMaxLatencyDurationCount: 8,
+                                liveDurationInfinity: true,
+                                capLevelToPlayerSize: false,
+                                manifestLoadingTimeOut: 12000,
+                                manifestLoadingMaxRetry: 3,
+                                manifestLoadingRetryDelay: 1000,
+                                fragLoadingTimeOut: 15000,
+                                fragLoadingMaxRetry: 4,
+                                fragLoadingRetryDelay: 1000,
+                                startFragPrefetch: true
+                            });
+                            state.playerEngine = hls;
+                            hls.loadSource(proxiedUrl);
+                            hls.attachMedia(video);
 
-                        hls.on(Hls.Events.MANIFEST_PARSED, () => {
-                            if (state.playbackSessionId !== currentSession) return;
-                            
-                            // Automatically lock to the HIGHEST available quality variant
-                            if (hls.levels && hls.levels.length > 0) {
-                                let bestLevelIndex = 0;
-                                let maxScore = -1;
-                                hls.levels.forEach((lvl, idx) => {
-                                    const score = (lvl.height || 0) * 1000000 + (lvl.bitrate || 0);
-                                    if (score > maxScore) {
-                                        maxScore = score;
-                                        bestLevelIndex = idx;
-                                    }
-                                });
+                            hls.on(Hls.Events.MANIFEST_PARSED, () => {
+                                if (state.playbackSessionId !== currentSession) return;
+                                
+                                // Automatically lock to the HIGHEST available quality variant
+                                if (hls.levels && hls.levels.length > 0) {
+                                    let bestLevelIndex = 0;
+                                    let maxScore = -1;
+                                    hls.levels.forEach((lvl, idx) => {
+                                        const score = (lvl.height || 0) * 1000000 + (lvl.bitrate || 0);
+                                        if (score > maxScore) {
+                                            maxScore = score;
+                                            bestLevelIndex = idx;
+                                        }
+                                    });
 
-                                const userPref = localStorage.getItem('aura_quality_pref') || 'highest';
-                                if (userPref === 'highest') {
-                                    hls.startLevel = bestLevelIndex;
-                                    hls.currentLevel = bestLevelIndex;
-                                    hls.loadLevel = bestLevelIndex;
-                                } else {
-                                    const parsedIdx = parseInt(userPref);
-                                    if (!isNaN(parsedIdx) && parsedIdx >= 0 && parsedIdx < hls.levels.length) {
-                                        hls.currentLevel = parsedIdx;
-                                        hls.loadLevel = parsedIdx;
-                                    } else {
+                                    const userPref = localStorage.getItem('aura_quality_pref') || 'highest';
+                                    if (userPref === 'highest') {
+                                        hls.startLevel = bestLevelIndex;
                                         hls.currentLevel = bestLevelIndex;
                                         hls.loadLevel = bestLevelIndex;
+                                    } else {
+                                        const parsedIdx = parseInt(userPref);
+                                        if (!isNaN(parsedIdx) && parsedIdx >= 0 && parsedIdx < hls.levels.length) {
+                                            hls.currentLevel = parsedIdx;
+                                            hls.loadLevel = parsedIdx;
+                                        } else {
+                                            hls.currentLevel = bestLevelIndex;
+                                            hls.loadLevel = bestLevelIndex;
+                                        }
                                     }
+                                    updateQualityBadgeUI(hls);
                                 }
+                                video.play().catch(() => {});
+                            });
+
+                            hls.on(Hls.Events.LEVEL_SWITCHED, () => {
+                                if (state.playbackSessionId !== currentSession) return;
                                 updateQualityBadgeUI(hls);
-                            }
-                            video.play().catch(() => {});
-                        });
+                            });
 
-                        hls.on(Hls.Events.LEVEL_SWITCHED, () => {
-                            if (state.playbackSessionId !== currentSession) return;
-                            updateQualityBadgeUI(hls);
-                        });
+                            hls.on(Hls.Events.LEVEL_LOADED, (event, data) => {
+                                if (state.playbackSessionId !== currentSession) return;
+                                if (data && data.details && data.details.live) {
+                                    window.onStreamLiveDetected && window.onStreamLiveDetected(data.details);
+                                }
+                            });
 
-                        hls.on(Hls.Events.LEVEL_LOADED, (event, data) => {
-                            if (state.playbackSessionId !== currentSession) return;
-                            if (data && data.details && data.details.live) {
-                                window.onStreamLiveDetected && window.onStreamLiveDetected(data.details);
-                            }
-                        });
-
-                        hls.on(Hls.Events.ERROR, (event, data) => {
-                            if (state.playbackSessionId !== currentSession) return;
-                            // Instant fallback if manifest does not exist or fails
-                            if (data.details === 'manifestLoadError' ||
-                                data.details === 'manifestParsingError' ||
-                                data.details === 'manifestLoadTimeOut' ||
-                                (data.response && data.response.code >= 400)) {
+                            hls.on(Hls.Events.ERROR, (event, data) => {
+                                if (state.playbackSessionId !== currentSession) return;
+                                if (data.details === 'manifestLoadError' ||
+                                    data.details === 'manifestParsingError' ||
+                                    data.details === 'manifestLoadTimeOut' ||
+                                    (data.response && data.response.code >= 400)) {
+                                    clearWatchdog();
+                                    cleanupPlayerResources(video);
+                                    attemptPlay();
+                                    return;
+                                }
+                                if (!data.fatal) return;
+                                if (data.type === Hls.ErrorTypes.NETWORK_ERROR) {
+                                    console.warn('HLS fatal network error, auto-recovering with startLoad()...');
+                                    hls.startLoad();
+                                    return;
+                                }
+                                if (data.type === Hls.ErrorTypes.MEDIA_ERROR) {
+                                    console.warn('HLS fatal media error, recovering...');
+                                    hls.recoverMediaError();
+                                    return;
+                                }
                                 clearWatchdog();
                                 cleanupPlayerResources(video);
                                 attemptPlay();
-                                return;
+                            });
+                            return;
+                        } else if (canNativeHls) {
+                            // Native Safari / iOS HLS
+                            video.src = proxiedUrl;
+                            const playPromise = video.play();
+                            if (playPromise !== undefined) {
+                                playPromise.catch((e) => {
+                                    if (state.playbackSessionId !== currentSession) return;
+                                    if (e.name !== 'NotAllowedError') {
+                                        clearWatchdog();
+                                        cleanupPlayerResources(video);
+                                        attemptPlay();
+                                    }
+                                });
                             }
-                            if (!data.fatal) return;
-                            if (data.type === Hls.ErrorTypes.MEDIA_ERROR) {
-                                hls.recoverMediaError();
-                            } else {
-                                clearWatchdog();
-                                cleanupPlayerResources(video);
-                                attemptPlay();
-                            }
-                        });
-                        return;
+                            return;
+                        }
                     }
 
                     // 2. If MPEG-TS or Live TS/Stream, use mpegts.js with type: 'mpegts'

@@ -1,5 +1,9 @@
-/* AURA IPTV Stylesheet */
+/* ════════════════════════════════════════════════════════════════
+   AURA IPTV — Custom Stylesheet
+   Extracted from monolith + improved for mobile/web UX
+   ════════════════════════════════════════════════════════════════ */
 
+/* ── Base Layout ──────────────────────────────────────────────── */
 body {
     background-color: #141414;
     color: #ffffff;
@@ -12,6 +16,7 @@ body {
     user-select: none;
 }
 
+/* ── Touch device: disable jittery hover scale on cards ────────── */
 @media (hover: none) {
     .media-card:hover {
         transform: none !important;
@@ -21,39 +26,6 @@ body {
     .media-card .overlay {
         opacity: 0 !important;
     }
-}
-
-.custom-scroll::-webkit-scrollbar { width: 6px; height: 6px; }
-.custom-scroll::-webkit-scrollbar-track { background: transparent; }
-.custom-scroll::-webkit-scrollbar-thumb { background: #333; border-radius: 3px; }
-.custom-scroll::-webkit-scrollbar-thumb:hover { background: #E50914; }
-
-.media-card {
-    transition: transform 0.25s cubic-bezier(0.2, 0.8, 0.2, 1), box-shadow 0.25s ease;
-    transform: translateZ(0);
-}
-.media-card:hover {
-    transform: translateY(-4px) scale(1.03);
-    z-index: 20;
-    box-shadow: 0 12px 24px rgba(0,0,0,0.8);
-}
-.media-card .overlay {
-    opacity: 0;
-    transition: opacity 0.2s ease;
-}
-.media-card:hover .overlay {
-    opacity: 1;
-}
-
-#player-modal {
-    width: 100vw;
-    height: 100vh;
-    width: 100dvw;
-    height: 100dvh;
-}
-
-.aura-toast {
-    transition: opacity 0.3s ease, transform 0.3s ease;
 }
 
 /* ── LANDSCAPE & COMPACT VIEWPORT FIX ─────────────────────────

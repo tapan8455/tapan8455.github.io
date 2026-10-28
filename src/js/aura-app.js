@@ -1,3 +1,8 @@
+/**
+ * AURA IPTV — Unified Application Coordinator
+ */
+
+// Native Electron / Web Bridge Polyfill
 if (!window.auraNative) {
     window.auraNative = {
         platform: 'web',
@@ -29,7 +34,7 @@ if (!window.auraNative) {
         },
         mediaProxy: (url) => {
             if (!url) return '';
-            if (url.startsWith('/stream?url=')) return url;
+            if (url.startsWith('/stream?url=' process.env.NODE_ENV === 'test')) return url;
             return `/stream?url=${encodeURIComponent(url)}`;
         },
         toggleFullScreen: () => {
@@ -102,7 +107,8 @@ const state = {
     currentIndex: -1,
     activeStreamUrl: '',
     playerEngine: null,
-    searchTimer: null
+    searchTimer: null,
+    loadingWatchdog: null
 };
 
 // Storage Operations
@@ -229,8 +235,12 @@ function goLiveEdge() {
 }
 
 function closePlayer() {
+    clearTimeout(state.loadingWatchdog);
     const modal = document.getElementById('player-modal');
     const video = document.getElementById('video-player');
+    const spinner = document.getElementById('player-loading-spinner');
+    const errBox = document.getElementById('player-error');
+
     if (state.playerEngine) {
         try { state.playerEngine.destroy(); } catch (_) {}
         state.playerEngine = null;
@@ -240,6 +250,8 @@ function closePlayer() {
         video.removeAttribute('src');
         video.load();
     }
+    if (spinner) spinner.classList.add('hidden');
+    if (errBox) errBox.classList.add('hidden');
     if (modal) {
         modal.classList.add('hidden');
         modal.setAttribute('aria-hidden', 'true');
@@ -319,7 +331,7 @@ function updateHeaderTitle(baseTitle, catName = null) {
     const hubTitle = document.getElementById('hub-title');
     if (!hubTitle) return;
     if (catName) {
-        hubTitle.innerHTML = `<span class="text-gray-400 hover:text-white cursor-pointer" onclick="switchTab('${state.currentTab}')">${baseTitle}</span> <span class="text-gray-600">/</span> <span>${esc(catName)}</span>`;
+        hubTitle.innerHTML = `<span class="text-gray-400 hover:text-white cursor-pointer" onclick="window.auraApp.setTab('${state.currentTab}')">${baseTitle}</span> <span class="text-gray-600">/</span> <span>${esc(catName)}</span>`;
     } else {
         hubTitle.textContent = baseTitle;
     }
@@ -331,9 +343,9 @@ function renderSidebarCategories(filterText = '') {
     const currentCats = state.categories[state.currentTab] || [];
     const filtered = currentCats.filter(c => (c.category_name || '').toLowerCase().includes(filterText.toLowerCase()));
 
-    list.innerHTML = `<button onclick="loadCategoryStreams('all')" class="w-full text-left px-3 py-2 rounded-lg text-xs font-bold bg-white/10 text-white">ALL CATEGORIES</button>` +
+    list.innerHTML = `<button onclick="window.loadCategoryStreams('all')" class="w-full text-left px-3 py-2 rounded-lg text-xs font-bold bg-white/10 text-white">ALL CATEGORIES</button>` +
         filtered.map(c => `
-            <button onclick="loadCategoryStreams('${jsEsc(c.category_id)}', '${jsEsc(c.category_name)}')" class="w-full text-left px-3 py-2 rounded-lg text-xs font-medium text-gray-400 hover:text-white hover:bg-white/5 truncate">
+            <button onclick="window.loadCategoryStreams('${jsEsc(c.category_id)}', '${jsEsc(c.category_name)}')" class="w-full text-left px-3 py-2 rounded-lg text-xs font-medium text-gray-400 hover:text-white hover:bg-white/5 truncate">
                 ${esc(c.category_name)}
             </button>
         `).join('');
@@ -504,8 +516,10 @@ async function loadDashboard() {
         state.categories.vod = normalize(vodCats);
         state.categories.series = normalize(seriesCats);
 
-        document.getElementById('sidebar-username').textContent = config.user;
-        document.getElementById('sidebar-avatar').textContent = config.user[0].toUpperCase();
+        const uNameEl = document.getElementById('sidebar-username');
+        const avatarEl = document.getElementById('sidebar-avatar');
+        if (uNameEl) uNameEl.textContent = config.user;
+        if (avatarEl) avatarEl.textContent = config.user[0].toUpperCase();
 
         switchTab(state.currentTab);
     } catch (err) {
@@ -582,7 +596,7 @@ function renderActiveFilteredStreams() {
         visible.map((item, idx) => {
             const isFav = state.favorites.some(f => String(f.id) === String(item.id));
             return `
-            <div class="group relative bg-panelbg border border-white/5 rounded-xl overflow-hidden cursor-pointer hover:border-white/20 transition-all flex flex-col" onclick="playMediaItem(${idx})">
+            <div class="group relative bg-panelbg border border-white/5 rounded-xl overflow-hidden cursor-pointer hover:border-white/20 transition-all flex flex-col" onclick="window.playMediaItem(${idx})">
                 <div class="${isLive ? 'aspect-video' : 'aspect-[2/3]'} bg-black/60 relative flex items-center justify-center overflow-hidden">
                     ${item.img ? `<img src="${item.img}" loading="lazy" class="w-full h-full object-cover group-hover:scale-105 transition-transform duration-300" onerror="this.style.display='none'">` : '<i class="fa-solid fa-play text-gray-700 text-3xl"></i>'}
                     <div class="absolute inset-0 bg-black/40 opacity-0 group-hover:opacity-100 flex items-center justify-center transition-opacity">
@@ -644,7 +658,7 @@ function executeSearch(query) {
     const results = state.activeCategoryStreams.filter(s => s.title.toLowerCase().includes(q));
     grid.innerHTML = results.length > 0
         ? results.map((item, idx) => `
-            <div class="group bg-panelbg border border-white/5 rounded-xl p-3 cursor-pointer hover:border-white/20 transition-all flex items-center gap-3" onclick="playMediaItem(${idx})">
+            <div class="group bg-panelbg border border-white/5 rounded-xl p-3 cursor-pointer hover:border-white/20 transition-all flex items-center gap-3" onclick="window.playMediaItem(${idx})">
                 <i class="fa-solid fa-play text-primary"></i>
                 <h4 class="text-xs font-bold text-white truncate flex-1">${esc(item.title)}</h4>
             </div>
@@ -702,6 +716,8 @@ async function playMediaItem(index) {
 }
 
 function executePlayerEngine(item, forceProxy = false) {
+    clearTimeout(state.loadingWatchdog);
+
     const modal = document.getElementById('player-modal');
     const video = document.getElementById('video-player');
     const spinner = document.getElementById('player-loading-spinner');
@@ -749,12 +765,20 @@ function executePlayerEngine(item, forceProxy = false) {
 
     state.activeStreamUrl = rawUrl;
 
-    // Mixed Content Guard: Always proxy HTTP URLs when app is hosted on HTTPS
+    // Mixed Content & CORS: Always proxy via /stream in web browsers
     const isHttpsApp = window.location.protocol === 'https:';
-    const requiresProxy = forceProxy || (isHttpsApp && rawUrl.startsWith('http:'));
+    const requiresProxy = forceProxy || isHttpsApp || (window.auraNative.platform === 'web');
     const streamUrl = requiresProxy ? window.auraNative.mediaProxy(rawUrl) : rawUrl;
 
     setupVideoEventHandlers(video, item);
+
+    // Watchdog: If no frames decode within 9s, stop spinner and offer recovery
+    state.loadingWatchdog = setTimeout(() => {
+        if (video.paused && video.currentTime === 0 && !modal.classList.contains('hidden')) {
+            if (spinner) spinner.classList.add('hidden');
+            showPlaybackFailure(item, 'Connecting is taking longer than expected. Tap "Use Proxy" or "Retry".');
+        }
+    }, 9000);
 
     if (streamUrl.includes('.m3u8') && typeof Hls !== 'undefined' && Hls.isSupported()) {
         const hls = new Hls({
@@ -767,11 +791,13 @@ function executePlayerEngine(item, forceProxy = false) {
         hls.loadSource(streamUrl);
         hls.attachMedia(video);
         hls.on(Hls.Events.MANIFEST_PARSED, () => {
+            clearTimeout(state.loadingWatchdog);
             if (spinner) spinner.classList.add('hidden');
             video.play().catch(() => {});
         });
         hls.on(Hls.Events.ERROR, (_, data) => {
             if (data.fatal) {
+                clearTimeout(state.loadingWatchdog);
                 if (spinner) spinner.classList.add('hidden');
                 showPlaybackFailure(item, `HLS decode error: ${data.details}. Try with proxy.`);
             }
@@ -781,7 +807,8 @@ function executePlayerEngine(item, forceProxy = false) {
         video.load();
         video.play().catch((err) => {
             if (err.name !== 'AbortError' && err.name !== 'NotAllowedError') {
-                showPlaybackFailure(item, 'Playback interrupted. Tap Use Proxy to bypass restrictions.');
+                clearTimeout(state.loadingWatchdog);
+                showPlaybackFailure(item, 'Direct playback stalled. Tap "Use Proxy" to relay through edge.');
             }
         });
     }
@@ -796,6 +823,7 @@ function setupVideoEventHandlers(video, item) {
 
     video.onwaiting = () => spinner?.classList.remove('hidden');
     video.onplaying = () => {
+        clearTimeout(state.loadingWatchdog);
         spinner?.classList.add('hidden');
         document.getElementById('player-error')?.classList.add('hidden');
         if (playPauseBtn) playPauseBtn.innerHTML = '<i class="fa-solid fa-pause text-base"></i>';
@@ -803,8 +831,12 @@ function setupVideoEventHandlers(video, item) {
     video.onpause = () => {
         if (playPauseBtn) playPauseBtn.innerHTML = '<i class="fa-solid fa-play text-base ml-0.5"></i>';
     };
-    video.oncanplay = () => spinner?.classList.add('hidden');
+    video.oncanplay = () => {
+        clearTimeout(state.loadingWatchdog);
+        spinner?.classList.add('hidden');
+    };
     video.onerror = () => {
+        clearTimeout(state.loadingWatchdog);
         spinner?.classList.add('hidden');
         showPlaybackFailure(item, 'Network or codec failure. This provider stream requires proxy routing.');
     };
@@ -849,7 +881,7 @@ function renderPlayerDrawer() {
     list.innerHTML = state.currentPlaylist.map((ch, idx) => {
         const isActive = idx === state.currentIndex;
         return `
-            <div data-title="${esc(ch.title)}" onclick="playMediaItem(${idx})" class="p-2.5 rounded-lg flex items-center gap-3 cursor-pointer transition-all ${isActive ? 'bg-primary/20 border border-primary/40 text-white' : 'bg-white/5 hover:bg-white/10 text-gray-300'}">
+            <div data-title="${esc(ch.title)}" onclick="window.playMediaItem(${idx})" class="p-2.5 rounded-lg flex items-center gap-3 cursor-pointer transition-all ${isActive ? 'bg-primary/20 border border-primary/40 text-white' : 'bg-white/5 hover:bg-white/10 text-gray-300'}">
                 <i class="fa-solid fa-tv text-xs ${isActive ? 'text-primary' : 'text-gray-500'}"></i>
                 <span class="text-xs font-semibold truncate flex-1">${esc(ch.title)}</span>
             </div>

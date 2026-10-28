@@ -1,0 +1,38 @@
+{
+  "name": "aura-iptv-macos",
+  "version": "2.0.0",
+  "description": "AURA IPTV — ultimate macOS IPTV client with native provider networking and resilient media playback.",
+  "main": "main.js",
+  "author": "AURA",
+  "license": "MIT",
+  "scripts": {
+    "start": "electron .",
+    "serve": "node server.js",
+    "dist": "electron-builder --mac",
+    "dist:arm64": "electron-builder --mac --arm64",
+    "dist:x64": "electron-builder --mac --x64",
+    "dist:universal": "electron-builder --mac --universal"
+  },
+  "devDependencies": {
+    "electron": "^45.1.0",
+    "electron-builder": "^26.18.0"
+  },
+  "build": {
+    "appId": "com.aura.iptv",
+    "productName": "AURA IPTV",
+    "files": [
+      "main.js",
+      "preload.js",
+      "src/**/*"
+    ],
+    "mac": {
+      "category": "public.app-category.entertainment",
+      "target": [
+        "dmg",
+        "zip"
+      ],
+      "hardenedRuntime": true,
+      "minimumSystemVersion": "12.0"
+    }
+  }
+}

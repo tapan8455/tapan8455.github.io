@@ -42,7 +42,7 @@ export default async function handler(req, res) {
     return res.status(400).send('Invalid or missing stream URL');
   }
 
-  // SSRF Protection: Deny local/private addresses
+  // SSRF Protection: Deny local/private network addresses
   try {
     const parsed = new URL(target);
     if (/^(localhost|127\.|10\.|192\.168\.|172\.(1[6-9]|2[0-9]|3[0-1])\.|169\.254\.)/i.test(parsed.hostname)) {

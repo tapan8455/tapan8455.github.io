@@ -102,56 +102,155 @@ const state = {
     currentIndex: -1,
     activeStreamUrl: '',
     playerEngine: null,
-    searchTimer: null,
-    currentCategoryTitle: ''
+    searchTimer: null
 };
 
-// Storage API Namespace
+// Storage Operations
+function exportAllUserData() {
+    const payload = {
+        config: { ...config, pass: '' },
+        favorites: state.favorites,
+        history: state.history,
+        hiddenChannels: state.hiddenChannelIds,
+        exportedAt: new Date().toISOString()
+    };
+    const blob = new Blob([JSON.stringify(payload, null, 2)], { type: 'application/json' });
+    const a = document.createElement('a');
+    a.href = URL.createObjectURL(blob);
+    a.download = `aura-iptv-backup-${Date.now()}.json`;
+    a.click();
+}
+
+function eraseAllUserData() {
+    if (!confirm('Permanently erase all playlist data, sources, and preferences?')) return;
+    localStorage.clear();
+    sessionStorage.clear();
+    location.reload();
+}
+
 window.auraStorage = {
-    exportAllUserData: () => {
-        const payload = {
-            config: { ...config, pass: '' },
-            favorites: state.favorites,
-            history: state.history,
-            hiddenChannels: state.hiddenChannelIds,
-            exportedAt: new Date().toISOString()
-        };
-        const blob = new Blob([JSON.stringify(payload, null, 2)], { type: 'application/json' });
-        const a = document.createElement('a');
-        a.href = URL.createObjectURL(blob);
-        a.download = `aura-iptv-backup-${Date.now()}.json`;
-        a.click();
-    },
-    eraseAllUserData: () => {
-        if (!confirm('Permanently erase all playlist data, sources, and preferences?')) return;
-        localStorage.clear();
-        sessionStorage.clear();
-        location.reload();
-    }
+    exportAllUserData,
+    eraseAllUserData
 };
 
-// Player API Namespace
+// Player Controls
+function togglePlay() {
+    const video = document.getElementById('video-player');
+    if (!video) return;
+    video.paused ? video.play().catch(() => {}) : video.pause();
+}
+
+function seekRelative(sec) {
+    const video = document.getElementById('video-player');
+    if (video) video.currentTime = Math.max(0, Math.min(video.duration || 999999, video.currentTime + sec));
+}
+
+function toggleMute() {
+    const video = document.getElementById('video-player');
+    if (!video) return;
+    video.muted = !video.muted;
+    const muteBtn = document.getElementById('mute-btn');
+    if (muteBtn) {
+        muteBtn.innerHTML = video.muted
+            ? '<i class="fa-solid fa-volume-xmark text-lg text-primary"></i>'
+            : '<i class="fa-solid fa-volume-high text-lg"></i>';
+    }
+}
+
+function cycleAspectRatio() {
+    const video = document.getElementById('video-player');
+    const btn = document.getElementById('btn-aspect');
+    if (!video) return;
+    const modes = ['contain', 'cover', 'fill'];
+    const current = video.style.objectFit || 'contain';
+    const next = modes[(modes.indexOf(current) + 1) % modes.length];
+    video.style.objectFit = next;
+    if (btn) btn.textContent = next.toUpperCase();
+}
+
+function togglePlayerDrawer() {
+    const drawer = document.getElementById('player-drawer');
+    if (drawer) {
+        drawer.classList.toggle('translate-x-full');
+        renderPlayerDrawer();
+    }
+}
+
+function filterDrawer(val) {
+    const q = (val || '').toLowerCase().trim();
+    const rows = document.querySelectorAll('#player-drawer-list > div');
+    rows.forEach(r => {
+        const title = (r.getAttribute('data-title') || '').toLowerCase();
+        r.style.display = title.includes(q) ? 'flex' : 'none';
+    });
+}
+
+function toggleStatsPanel() {
+    const p = document.getElementById('stats-for-nerds-panel');
+    if (!p) return;
+    p.classList.toggle('hidden');
+    if (!p.classList.contains('hidden')) updateStatsTelemetry();
+}
+
+function copyStreamUrl() {
+    if (state.activeStreamUrl) {
+        window.auraNative.copyToClipboard(state.activeStreamUrl);
+        showToast('Stream URL copied to clipboard');
+    }
+}
+
+function retryPlayback() {
+    if (state.currentPlaylist[state.currentIndex]) {
+        executePlayerEngine(state.currentPlaylist[state.currentIndex], false);
+    }
+}
+
+function retryWithProxy() {
+    if (state.currentPlaylist[state.currentIndex]) {
+        executePlayerEngine(state.currentPlaylist[state.currentIndex], true);
+    }
+}
+
+function stepChannel(direction) {
+    if (state.currentPlaylist.length === 0) return;
+    let next = state.currentIndex + direction;
+    if (next < 0) next = state.currentPlaylist.length - 1;
+    if (next >= state.currentPlaylist.length) next = 0;
+    state.currentIndex = next;
+    executePlayerEngine(state.currentPlaylist[next]);
+}
+
+function goLiveEdge() {
+    const video = document.getElementById('video-player');
+    if (video && video.seekable && video.seekable.length > 0) {
+        video.currentTime = video.seekable.end(video.seekable.length - 1) - 0.5;
+        video.play().catch(() => {});
+    }
+}
+
+function closePlayer() {
+    const modal = document.getElementById('player-modal');
+    const video = document.getElementById('video-player');
+    if (state.playerEngine) {
+        try { state.playerEngine.destroy(); } catch (_) {}
+        state.playerEngine = null;
+    }
+    if (video) {
+        video.pause();
+        video.removeAttribute('src');
+        video.load();
+    }
+    if (modal) {
+        modal.classList.add('hidden');
+        modal.setAttribute('aria-hidden', 'true');
+        modal.classList.remove('opacity-100');
+    }
+}
+
 window.auraPlayer = {
-    togglePlay: () => {
-        const video = document.getElementById('video-player');
-        if (!video) return;
-        video.paused ? video.play().catch(() => {}) : video.pause();
-    },
-    seekRelative: (sec) => {
-        const video = document.getElementById('video-player');
-        if (video) video.currentTime = Math.max(0, Math.min(video.duration || 999999, video.currentTime + sec));
-    },
-    toggleMute: () => {
-        const video = document.getElementById('video-player');
-        if (!video) return;
-        video.muted = !video.muted;
-        const muteBtn = document.getElementById('mute-btn');
-        if (muteBtn) {
-            muteBtn.innerHTML = video.muted
-                ? '<i class="fa-solid fa-volume-xmark text-lg text-primary"></i>'
-                : '<i class="fa-solid fa-volume-high text-lg"></i>';
-        }
-    },
+    togglePlay,
+    seekRelative,
+    toggleMute,
     toggleFullscreen: () => window.auraNative.toggleFullScreen(),
     togglePip: () => {
         const video = document.getElementById('video-player');
@@ -161,206 +260,16 @@ window.auraPlayer = {
             video.requestPictureInPicture().catch(() => showToast('PiP unavailable'));
         }
     },
-    cycleAspectRatio: () => {
-        const video = document.getElementById('video-player');
-        const btn = document.getElementById('btn-aspect');
-        if (!video) return;
-        const modes = ['contain', 'cover', 'fill'];
-        const current = video.style.objectFit || 'contain';
-        const next = modes[(modes.indexOf(current) + 1) % modes.length];
-        video.style.objectFit = next;
-        if (btn) btn.textContent = next.toUpperCase();
-    },
-    toggleDrawer: () => {
-        const drawer = document.getElementById('player-drawer');
-        if (drawer) {
-            drawer.classList.toggle('translate-x-full');
-            renderPlayerDrawer();
-        }
-    },
-    filterDrawer: (val) => {
-        const q = (val || '').toLowerCase().trim();
-        const rows = document.querySelectorAll('#player-drawer-list > div');
-        rows.forEach(r => {
-            const title = (r.getAttribute('data-title') || '').toLowerCase();
-            r.style.display = title.includes(q) ? 'flex' : 'none';
-        });
-    },
-    toggleStatsPanel: () => {
-        const p = document.getElementById('stats-for-nerds-panel');
-        if (!p) return;
-        p.classList.toggle('hidden');
-        if (!p.classList.contains('hidden')) updateStatsTelemetry();
-    },
-    copyStreamUrl: () => {
-        if (state.activeStreamUrl) {
-            window.auraNative.copyToClipboard(state.activeStreamUrl);
-            showToast('Stream URL copied to clipboard');
-        }
-    },
-    retry: () => {
-        if (state.currentPlaylist[state.currentIndex]) {
-            executePlayerEngine(state.currentPlaylist[state.currentIndex], false);
-        }
-    },
-    retryWithProxy: () => {
-        if (state.currentPlaylist[state.currentIndex]) {
-            executePlayerEngine(state.currentPlaylist[state.currentIndex], true);
-        }
-    },
-    stepChannel: (direction) => {
-        if (state.currentPlaylist.length === 0) return;
-        let next = state.currentIndex + direction;
-        if (next < 0) next = state.currentPlaylist.length - 1;
-        if (next >= state.currentPlaylist.length) next = 0;
-        state.currentIndex = next;
-        executePlayerEngine(state.currentPlaylist[next]);
-    },
-    goLiveEdge: () => {
-        const video = document.getElementById('video-player');
-        if (video && video.seekable && video.seekable.length > 0) {
-            video.currentTime = video.seekable.end(video.seekable.length - 1) - 0.5;
-            video.play().catch(() => {});
-        }
-    },
-    close: () => closePlayer()
-};
-
-// Application API Namespace
-window.auraApp = {
-    setTab: (tab) => switchTab(tab),
-    toggleSidebar: () => {
-        const sb = document.getElementById('app-sidebar');
-        const bd = document.getElementById('sidebar-backdrop');
-        if (!sb) return;
-        sb.classList.toggle('-translate-x-full');
-        if (bd) bd.classList.toggle('hidden');
-    },
-    openSourceModal: (tabType = 'xtream') => {
-        const modal = document.getElementById('source-modal');
-        if (modal) {
-            modal.classList.remove('hidden');
-            modal.setAttribute('aria-hidden', 'false');
-        }
-        window.auraApp.setSourceTab(tabType);
-        const s = document.getElementById('xtream-server');
-        const u = document.getElementById('xtream-user');
-        const p = document.getElementById('xtream-pass');
-        if (s) s.value = config.server || '';
-        if (u) u.value = config.user || '';
-        if (p) p.value = config.pass || '';
-    },
-    closeSourceModal: () => {
-        const modal = document.getElementById('source-modal');
-        if (modal) {
-            modal.classList.add('hidden');
-            modal.setAttribute('aria-hidden', 'true');
-        }
-    },
-    setSourceTab: (type) => {
-        ['xtream', 'm3u', 'file'].forEach(t => {
-            const form = document.getElementById(`form-src-${t}`);
-            const tab = document.getElementById(`tab-src-${t}`);
-            if (form) form.classList.toggle('hidden', t !== type);
-            if (tab) {
-                tab.className = t === type
-                    ? 'pb-3 border-b-2 border-primary text-primary'
-                    : 'pb-3 border-b-2 border-transparent text-gray-400';
-            }
-        });
-    },
-    testXtreamConnection: async () => {
-        const resultEl = document.getElementById('src-test-result');
-        const s = document.getElementById('xtream-server').value.trim();
-        const u = document.getElementById('xtream-user').value.trim();
-        const p = document.getElementById('xtream-pass').value.trim();
-
-        if (!s || !u || !p) {
-            resultEl.className = 'block p-3 rounded-lg text-xs bg-red-500/20 text-red-400 border border-red-500/30';
-            resultEl.textContent = 'Server URL, Username, and Password are required.';
-            return;
-        }
-
-        resultEl.className = 'block p-3 rounded-lg text-xs bg-white/5 text-gray-300';
-        resultEl.innerHTML = '<i class="fa-solid fa-spinner fa-spin mr-2"></i> Testing connection...';
-
-        const res = await window.auraNative.testConnection({ server: s, user: u, pass: p });
-        if (res.success) {
-            resultEl.className = 'block p-3 rounded-lg text-xs bg-green-500/20 text-green-300 border border-green-500/30';
-            resultEl.innerHTML = `<i class="fa-solid fa-check mr-2"></i> Verified: Status <b>${res.data?.user_info?.status || 'Active'}</b>`;
-        } else {
-            resultEl.className = 'block p-3 rounded-lg text-xs bg-red-500/20 text-red-400 border border-red-500/30';
-            resultEl.innerHTML = `<i class="fa-solid fa-xmark mr-2"></i> ${esc(res.error || 'Authentication rejected')}`;
-        }
-    },
-    handleSourceSubmit: async (e, type) => {
-        e.preventDefault();
-        if (type === 'xtream') {
-            const s = document.getElementById('xtream-server').value.trim();
-            const u = document.getElementById('xtream-user').value.trim();
-            const p = document.getElementById('xtream-pass').value.trim();
-            config = { server: s, user: u, pass: p };
-            localStorage.setItem('aura_config', JSON.stringify(config));
-            window.auraApp.closeSourceModal();
-            showToast('Account credentials saved');
-            await loadDashboard();
-        } else {
-            showToast('Playlist source saved');
-        }
-    },
-    openSettingsModal: () => document.getElementById('settings-modal')?.classList.remove('hidden'),
-    closeSettingsModal: () => document.getElementById('settings-modal')?.classList.add('hidden'),
-    openKeyboardShortcutsModal: () => document.getElementById('shortcuts-modal')?.classList.remove('hidden'),
-    closeKeyboardShortcutsModal: () => document.getElementById('shortcuts-modal')?.classList.add('hidden'),
-    handleCastTrigger: () => showToast('Screen Mirroring: Connect your browser or OS to an AirPlay / Cast receiver'),
-    openProfilePicker: () => window.auraApp.openSourceModal(),
-    restoreAllHiddenChannels: () => {
-        state.hiddenChannelIds = [];
-        localStorage.removeItem('aura_hidden_channels');
-        document.getElementById('filter-hidden-banner')?.classList.add('hidden');
-        renderActiveFilteredStreams();
-    },
-    debouncedSearch: (q) => {
-        clearTimeout(state.searchTimer);
-        state.searchTimer = setTimeout(() => executeSearch(q), 300);
-    },
-    clearSearch: () => {
-        const inp = document.getElementById('global-search-input');
-        if (inp) inp.value = '';
-        executeSearch('');
-    },
-    applySort: (sortType, btn) => {
-        document.querySelectorAll('[role="group"] button').forEach(b => {
-            b.className = 'px-3.5 py-1 rounded-md text-xs font-bold text-gray-400 hover:text-white hover:bg-white/5 transition-colors';
-            b.setAttribute('aria-pressed', 'false');
-        });
-        if (btn) {
-            btn.className = 'px-3.5 py-1 rounded-md text-xs font-bold text-white bg-white/10 transition-colors';
-            btn.setAttribute('aria-pressed', 'true');
-        }
-        if (sortType === 'az') {
-            state.activeCategoryStreams.sort((a, b) => a.title.localeCompare(b.title));
-        } else if (sortType === 'new') {
-            state.activeCategoryStreams.sort((a, b) => (parseInt(b.added) || 0) - (parseInt(a.added) || 0));
-        } else {
-            state.activeCategoryStreams.sort((a, b) => (b.ratingNum || 0) - (a.ratingNum || 0));
-        }
-        renderActiveFilteredStreams();
-    },
-    renderSidebarCategories: (filterText = '') => {
-        const list = document.getElementById('category-list');
-        if (!list) return;
-        const currentCats = state.categories[state.currentTab] || [];
-        const filtered = currentCats.filter(c => (c.category_name || '').toLowerCase().includes(filterText.toLowerCase()));
-
-        list.innerHTML = `<button onclick="loadCategoryStreams('all')" class="w-full text-left px-3 py-2 rounded-lg text-xs font-bold bg-white/10 text-white">ALL CATEGORIES</button>` +
-            filtered.map(c => `
-                <button onclick="loadCategoryStreams('${jsEsc(c.category_id)}', '${jsEsc(c.category_name)}')" class="w-full text-left px-3 py-2 rounded-lg text-xs font-medium text-gray-400 hover:text-white hover:bg-white/5 truncate">
-                    ${esc(c.category_name)}
-                </button>
-            `).join('');
-    },
-    jumpEpgToNow: () => showToast('EPG timeline aligned to current broadcast slot')
+    cycleAspectRatio,
+    toggleDrawer: togglePlayerDrawer,
+    filterDrawer,
+    toggleStatsPanel,
+    copyStreamUrl,
+    retry: retryPlayback,
+    retryWithProxy,
+    stepChannel,
+    goLiveEdge,
+    close: closePlayer
 };
 
 // Global Routing
@@ -402,7 +311,7 @@ function switchTab(tab) {
         return;
     }
 
-    window.auraApp.renderSidebarCategories();
+    renderSidebarCategories();
     loadCategoryStreams('all');
 }
 
@@ -415,6 +324,162 @@ function updateHeaderTitle(baseTitle, catName = null) {
         hubTitle.textContent = baseTitle;
     }
 }
+
+function renderSidebarCategories(filterText = '') {
+    const list = document.getElementById('category-list');
+    if (!list) return;
+    const currentCats = state.categories[state.currentTab] || [];
+    const filtered = currentCats.filter(c => (c.category_name || '').toLowerCase().includes(filterText.toLowerCase()));
+
+    list.innerHTML = `<button onclick="loadCategoryStreams('all')" class="w-full text-left px-3 py-2 rounded-lg text-xs font-bold bg-white/10 text-white">ALL CATEGORIES</button>` +
+        filtered.map(c => `
+            <button onclick="loadCategoryStreams('${jsEsc(c.category_id)}', '${jsEsc(c.category_name)}')" class="w-full text-left px-3 py-2 rounded-lg text-xs font-medium text-gray-400 hover:text-white hover:bg-white/5 truncate">
+                ${esc(c.category_name)}
+            </button>
+        `).join('');
+}
+
+function openSourceModal(tabType = 'xtream') {
+    const modal = document.getElementById('source-modal');
+    if (modal) {
+        modal.classList.remove('hidden');
+        modal.setAttribute('aria-hidden', 'false');
+    }
+    setSourceTab(tabType);
+    const s = document.getElementById('xtream-server');
+    const u = document.getElementById('xtream-user');
+    const p = document.getElementById('xtream-pass');
+    if (s) s.value = config.server || '';
+    if (u) u.value = config.user || '';
+    if (p) p.value = config.pass || '';
+}
+
+function closeSourceModal() {
+    const modal = document.getElementById('source-modal');
+    if (modal) {
+        modal.classList.add('hidden');
+        modal.setAttribute('aria-hidden', 'true');
+    }
+}
+
+function setSourceTab(type) {
+    ['xtream', 'm3u', 'file'].forEach(t => {
+        const form = document.getElementById(`form-src-${t}`);
+        const tab = document.getElementById(`tab-src-${t}`);
+        if (form) form.classList.toggle('hidden', t !== type);
+        if (tab) {
+            tab.className = t === type
+                ? 'pb-3 border-b-2 border-primary text-primary'
+                : 'pb-3 border-b-2 border-transparent text-gray-400';
+        }
+    });
+}
+
+async function testXtreamConnection() {
+    const resultEl = document.getElementById('src-test-result');
+    const s = document.getElementById('xtream-server').value.trim();
+    const u = document.getElementById('xtream-user').value.trim();
+    const p = document.getElementById('xtream-pass').value.trim();
+
+    if (!s || !u || !p) {
+        resultEl.className = 'block p-3 rounded-lg text-xs bg-red-500/20 text-red-400 border border-red-500/30';
+        resultEl.textContent = 'Server URL, Username, and Password are required.';
+        return;
+    }
+
+    resultEl.className = 'block p-3 rounded-lg text-xs bg-white/5 text-gray-300';
+    resultEl.innerHTML = '<i class="fa-solid fa-spinner fa-spin mr-2"></i> Testing connection...';
+
+    const res = await window.auraNative.testConnection({ server: s, user: u, pass: p });
+    if (res.success) {
+        resultEl.className = 'block p-3 rounded-lg text-xs bg-green-500/20 text-green-300 border border-green-500/30';
+        resultEl.innerHTML = `<i class="fa-solid fa-check mr-2"></i> Verified: Status <b>${res.data?.user_info?.status || 'Active'}</b>`;
+    } else {
+        resultEl.className = 'block p-3 rounded-lg text-xs bg-red-500/20 text-red-400 border border-red-500/30';
+        resultEl.innerHTML = `<i class="fa-solid fa-xmark mr-2"></i> ${esc(res.error || 'Authentication rejected')}`;
+    }
+}
+
+async function handleSourceSubmit(e, type) {
+    e.preventDefault();
+    if (type === 'xtream') {
+        const s = document.getElementById('xtream-server').value.trim();
+        const u = document.getElementById('xtream-user').value.trim();
+        const p = document.getElementById('xtream-pass').value.trim();
+        config = { server: s, user: u, pass: p };
+        localStorage.setItem('aura_config', JSON.stringify(config));
+        closeSourceModal();
+        showToast('Account credentials saved');
+        await loadDashboard();
+    } else {
+        showToast('Playlist source saved');
+    }
+}
+
+window.auraApp = {
+    setTab: switchTab,
+    toggleSidebar: () => {
+        const sb = document.getElementById('app-sidebar');
+        const bd = document.getElementById('sidebar-backdrop');
+        if (!sb) return;
+        sb.classList.toggle('-translate-x-full');
+        if (bd) bd.classList.toggle('hidden');
+    },
+    openSourceModal,
+    closeSourceModal,
+    setSourceTab,
+    testXtreamConnection,
+    handleSourceSubmit,
+    openSettingsModal: () => document.getElementById('settings-modal')?.classList.remove('hidden'),
+    closeSettingsModal: () => document.getElementById('settings-modal')?.classList.add('hidden'),
+    openKeyboardShortcutsModal: () => document.getElementById('shortcuts-modal')?.classList.remove('hidden'),
+    closeKeyboardShortcutsModal: () => document.getElementById('shortcuts-modal')?.classList.add('hidden'),
+    handleCastTrigger: () => showToast('Screen Mirroring: Connect your browser or OS to an AirPlay / Cast receiver'),
+    openProfilePicker: () => openSourceModal(),
+    restoreAllHiddenChannels: () => {
+        state.hiddenChannelIds = [];
+        localStorage.removeItem('aura_hidden_channels');
+        document.getElementById('filter-hidden-banner')?.classList.add('hidden');
+        renderActiveFilteredStreams();
+    },
+    debouncedSearch: (q) => {
+        clearTimeout(state.searchTimer);
+        state.searchTimer = setTimeout(() => executeSearch(q), 300);
+    },
+    clearSearch: () => {
+        const inp = document.getElementById('global-search-input');
+        if (inp) inp.value = '';
+        executeSearch('');
+    },
+    applySort: (sortType, btn) => {
+        document.querySelectorAll('[role="group"] button').forEach(b => {
+            b.className = 'px-3.5 py-1 rounded-md text-xs font-bold text-gray-400 hover:text-white hover:bg-white/5 transition-colors';
+            b.setAttribute('aria-pressed', 'false');
+        });
+        if (btn) {
+            btn.className = 'px-3.5 py-1 rounded-md text-xs font-bold text-white bg-white/10 transition-colors';
+            btn.setAttribute('aria-pressed', 'true');
+        }
+        if (sortType === 'az') {
+            state.activeCategoryStreams.sort((a, b) => a.title.localeCompare(b.title));
+        } else if (sortType === 'new') {
+            state.activeCategoryStreams.sort((a, b) => (parseInt(b.added) || 0) - (parseInt(a.added) || 0));
+        } else {
+            state.activeCategoryStreams.sort((a, b) => (b.ratingNum || 0) - (a.ratingNum || 0));
+        }
+        renderActiveFilteredStreams();
+    },
+    renderSidebarCategories,
+    jumpEpgToNow: () => showToast('EPG timeline aligned to current broadcast slot')
+};
+
+// Global direct function aliases for HTML inline calls
+window.setTab = switchTab;
+window.openSourceModal = openSourceModal;
+window.closeSourceModal = closeSourceModal;
+window.closePlayer = closePlayer;
+window.playMediaItem = playMediaItem;
+window.loadCategoryStreams = loadCategoryStreams;
 
 // Data Fetching
 async function loadDashboard() {
@@ -454,7 +519,6 @@ async function loadCategoryStreams(catId, catName = null) {
     const grid = document.getElementById('main-grid');
     if (!grid) return;
 
-    // Avoid loading tens of thousands of streams at once: default to first non-empty category
     if (catId === 'all') {
         const cats = state.categories[state.currentTab] || [];
         const firstCat = cats.find(c => c.category_id && !/^[-=_*\s]+$/.test(c.category_name));
@@ -595,7 +659,6 @@ async function playMediaItem(index) {
     const item = state.currentPlaylist[index];
     if (!item) return;
 
-    // Series Handling: Fetch episodes rather than playing series ID directly
     if (item.type === 'series') {
         showToast('Loading series episodes...');
         try {
@@ -649,10 +712,11 @@ function executePlayerEngine(item, forceProxy = false) {
     modal.classList.remove('hidden');
     modal.setAttribute('aria-hidden', 'false');
     modal.classList.add('opacity-100');
-    errBox.classList.add('hidden');
-    spinner.classList.remove('hidden');
+    if (errBox) errBox.classList.add('hidden');
+    if (spinner) spinner.classList.remove('hidden');
 
-    document.getElementById('player-main-title').textContent = item.title;
+    const titleEl = document.getElementById('player-main-title');
+    if (titleEl) titleEl.textContent = item.title;
 
     const isLive = item.type === 'live';
     const seekBarContainer = document.getElementById('seek-bar-container');
@@ -703,12 +767,12 @@ function executePlayerEngine(item, forceProxy = false) {
         hls.loadSource(streamUrl);
         hls.attachMedia(video);
         hls.on(Hls.Events.MANIFEST_PARSED, () => {
-            spinner.classList.add('hidden');
+            if (spinner) spinner.classList.add('hidden');
             video.play().catch(() => {});
         });
         hls.on(Hls.Events.ERROR, (_, data) => {
             if (data.fatal) {
-                spinner.classList.add('hidden');
+                if (spinner) spinner.classList.add('hidden');
                 showPlaybackFailure(item, `HLS decode error: ${data.details}. Try with proxy.`);
             }
         });
@@ -730,18 +794,18 @@ function setupVideoEventHandlers(video, item) {
     const timeCurrent = document.getElementById('time-current');
     const timeTotal = document.getElementById('time-total');
 
-    video.onwaiting = () => spinner.classList.remove('hidden');
+    video.onwaiting = () => spinner?.classList.remove('hidden');
     video.onplaying = () => {
-        spinner.classList.add('hidden');
+        spinner?.classList.add('hidden');
         document.getElementById('player-error')?.classList.add('hidden');
         if (playPauseBtn) playPauseBtn.innerHTML = '<i class="fa-solid fa-pause text-base"></i>';
     };
     video.onpause = () => {
         if (playPauseBtn) playPauseBtn.innerHTML = '<i class="fa-solid fa-play text-base ml-0.5"></i>';
     };
-    video.oncanplay = () => spinner.classList.add('hidden');
+    video.oncanplay = () => spinner?.classList.add('hidden');
     video.onerror = () => {
-        spinner.classList.add('hidden');
+        spinner?.classList.add('hidden');
         showPlaybackFailure(item, 'Network or codec failure. This provider stream requires proxy routing.');
     };
 
@@ -807,25 +871,6 @@ function updateStatsTelemetry() {
     }
 }
 
-function closePlayer() {
-    const modal = document.getElementById('player-modal');
-    const video = document.getElementById('video-player');
-    if (state.playerEngine) {
-        try { state.playerEngine.destroy(); } catch (_) {}
-        state.playerEngine = null;
-    }
-    if (video) {
-        video.pause();
-        video.removeAttribute('src');
-        video.load();
-    }
-    if (modal) {
-        modal.classList.add('hidden');
-        modal.setAttribute('aria-hidden', 'true');
-        modal.classList.remove('opacity-100');
-    }
-}
-
 // Global Keyboard Navigation
 window.addEventListener('keydown', (e) => {
     if (['INPUT', 'TEXTAREA'].includes(e.target.tagName)) return;
@@ -836,23 +881,23 @@ window.addEventListener('keydown', (e) => {
             e.preventDefault();
             closePlayer();
         } else {
-            window.auraApp.closeSourceModal();
+            closeSourceModal();
             window.auraApp.closeSettingsModal();
             window.auraApp.closeKeyboardShortcutsModal();
         }
     } else if (isPlayerOpen) {
         if (e.key === ' ') {
             e.preventDefault();
-            window.auraPlayer.togglePlay();
+            togglePlay();
         } else if (e.key === 'ArrowRight') {
             e.preventDefault();
-            window.auraPlayer.seekRelative(10);
+            seekRelative(10);
         } else if (e.key === 'ArrowLeft') {
             e.preventDefault();
-            window.auraPlayer.seekRelative(-10);
+            seekRelative(-10);
         } else if (e.key.toLowerCase() === 'm') {
             e.preventDefault();
-            window.auraPlayer.toggleMute();
+            toggleMute();
         } else if (e.key.toLowerCase() === 'f') {
             e.preventDefault();
             window.auraPlayer.toggleFullscreen();

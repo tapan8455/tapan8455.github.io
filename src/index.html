@@ -615,7 +615,7 @@
 
             <!-- Bottom Controls -->
             <div class="p-3 sm:p-6 md:px-10 player-gradient w-full pb-safe pointer-events-auto">
-                <div class="flex items-center gap-2.5 sm:gap-4 mb-2.5 sm:mb-4">
+                <div id="seek-bar-container" class="flex items-center gap-2.5 sm:gap-4 mb-2.5 sm:mb-4">
                     <span id="time-current" class="text-white text-[10px] sm:text-[11px] font-bold w-10 sm:w-12 text-right opacity-80 font-mono">0:00</span>
                     <input type="range" id="seek-bar" value="0" class="w-full flex-grow py-2">
                     <span id="time-total" class="text-white text-[10px] sm:text-[11px] font-bold w-10 sm:w-12 opacity-80 font-mono">0:00</span>
@@ -626,8 +626,14 @@
                         <button id="play-pause-btn" class="text-white hover:text-primary transition-transform active:scale-90 w-10 h-10 sm:w-12 sm:h-12 flex items-center justify-center rounded-full bg-white/10 sm:bg-transparent" title="Play / Pause (Space)">
                             <i class="fa-solid fa-play text-lg sm:text-2xl md:text-3xl ml-0.5"></i>
                         </button>
+
+                        <!-- Jump to Live Edge Button (For Live TV content) -->
+                        <button id="btn-go-live" onclick="goToLiveEdge()" class="hidden items-center gap-1.5 px-3 py-1.5 rounded-full bg-red-600 hover:bg-red-700 active:bg-red-800 text-white font-black text-xs uppercase tracking-wider shadow-[0_0_12px_rgba(229,9,20,0.6)] active:scale-95 transition-all cursor-pointer select-none" title="Jump to Live broadcast">
+                            <i class="fa-solid fa-circle text-[7px] text-white animate-pulse"></i>
+                            <span>LIVE</span>
+                        </button>
                         
-                        <!-- Rewind 10s (Always visible on mobile & desktop) -->
+                        <!-- Rewind 10s (VOD & Series only) -->
                         <button id="rewind-btn" class="text-white hover:text-primary transition-all active:scale-90 flex items-center justify-center w-9 h-9 sm:w-10 sm:h-10 rounded-full bg-white/10 sm:bg-transparent" title="Rewind 10s (Left Arrow)">
                             <div class="flex flex-col items-center">
                                 <i class="fa-solid fa-rotate-left text-sm sm:text-base md:text-lg"></i>
@@ -635,7 +641,7 @@
                             </div>
                         </button>
 
-                        <!-- Forward 10s (Always visible on mobile & desktop) -->
+                        <!-- Forward 10s (VOD & Series only) -->
                         <button id="forward-btn" class="text-white hover:text-primary transition-all active:scale-90 flex items-center justify-center w-9 h-9 sm:w-10 sm:h-10 rounded-full bg-white/10 sm:bg-transparent" title="Forward 10s (Right Arrow)">
                             <div class="flex flex-col items-center">
                                 <i class="fa-solid fa-rotate-right text-sm sm:text-base md:text-lg"></i>
@@ -643,13 +649,13 @@
                             </div>
                         </button>
                         
-                        <!-- Volume Slider (Hidden on small mobile screens where physical volume buttons are used) -->
-                        <div id="volume-container" class="hidden md:flex items-center gap-2.5 bg-black/40 hover:bg-black/70 backdrop-blur-md px-3 py-1.5 rounded-full border border-white/10 hover:border-white/25 transition-all shadow-lg group ml-1 select-none" title="Volume">
+                        <!-- Volume Slider (Fully responsive on mobile & desktop) -->
+                        <div id="volume-container" class="flex items-center gap-1.5 sm:gap-2.5 bg-black/40 hover:bg-black/70 backdrop-blur-md px-2.5 sm:px-3 py-1.5 rounded-full border border-white/10 hover:border-white/25 transition-all shadow-lg group ml-0.5 sm:ml-1 select-none" title="Volume">
                             <button id="mute-btn" class="text-white hover:text-primary transition-colors flex items-center justify-center w-6 h-6 focus:outline-none" title="Mute / Unmute (M)">
                                 <i class="fa-solid fa-volume-high text-sm"></i>
                             </button>
-                            <input type="range" id="volume-bar" min="0" max="1" step="0.02" value="1" class="w-20 md:w-24 cursor-pointer accent-primary transition-all">
-                            <span id="volume-pct" class="text-[11px] font-bold text-gray-300 font-mono w-7 text-right select-none">100%</span>
+                            <input type="range" id="volume-bar" min="0" max="1" step="0.02" value="1" class="w-16 sm:w-20 md:w-24 cursor-pointer accent-primary transition-all">
+                            <span id="volume-pct" class="text-[11px] font-bold text-gray-300 font-mono w-7 text-right select-none hidden sm:inline">100%</span>
                         </div>
                     </div>
                     
@@ -1007,20 +1013,75 @@
             setTimeout(() => ripple.classList.remove('active'), 400);
         }
 
+        window.isStreamLive = function() {
+            if (typeof currentActiveMovie !== 'undefined' && currentActiveMovie) {
+                if (currentActiveMovie.type === 'vod' || currentActiveMovie.type === 'series' || currentActiveMovie.type === 'episode') {
+                    return false;
+                }
+                if (currentActiveMovie.type === 'live' || currentActiveMovie.stream_type === 'live' || currentActiveMovie.stream_type === 'live_stream') {
+                    return true;
+                }
+            }
+            if (typeof state !== 'undefined' && state.currentTab === 'live') return true;
+            if (typeof state !== 'undefined' && (state.playingSeries || state.currentTab === 'vod' || state.currentTab === 'series')) return false;
+            if (typeof state !== 'undefined' && state.playerEngine) {
+                if (state.playerEngine.liveSyncPosition !== null && state.playerEngine.liveSyncPosition !== undefined) return true;
+                const curLevel = state.playerEngine.levels?.[state.playerEngine.currentLevel]?.details;
+                if (curLevel && curLevel.live) return true;
+                if (state.playerEngine.isLive) return true;
+            }
+            const video = document.getElementById('video-player');
+            if (video && video.duration === Infinity) return true;
+            return false;
+        };
+
+        window.goToLiveEdge = function() {
+            const video = document.getElementById('video-player');
+            if (!video) return;
+            try {
+                if (state.playerEngine && typeof state.playerEngine.liveSyncPosition === 'number' && !isNaN(state.playerEngine.liveSyncPosition)) {
+                    video.currentTime = state.playerEngine.liveSyncPosition;
+                } else if (video.seekable && video.seekable.length > 0) {
+                    const edge = video.seekable.end(video.seekable.length - 1);
+                    video.currentTime = Math.max(0, edge - 0.5);
+                } else if (video.duration && !isNaN(video.duration) && video.duration !== Infinity) {
+                    video.currentTime = Math.max(0, video.duration - 0.5);
+                }
+            } catch (e) {
+                console.warn("goToLiveEdge error:", e);
+            }
+            if (video.paused) {
+                video.play().catch(() => {});
+            }
+            const btn = document.getElementById('btn-go-live');
+            if (btn) {
+                btn.classList.add('scale-105', 'bg-red-500');
+                setTimeout(() => btn.classList.remove('scale-105', 'bg-red-500'), 250);
+            }
+            window.showPlayerControls && window.showPlayerControls(true);
+        };
+
+        let lastControlsOpenedTime = 0;
+
         function togglePlayerControls() {
             const pc = document.getElementById('player-controls');
             const video = document.getElementById('video-player');
             if (!pc || !video) return;
             const isShowing = pc.classList.contains('!opacity-100');
             if (isShowing) {
-                // Only hide — never toggle play/pause from a bare tap.
-                // Play/pause is handled ONLY by the dedicated play button.
+                // If controls were opened very recently (< 900ms ago), ignore toggle off
+                // so an immediate second touch or touch on a control doesn't dismiss the bar
+                if (Date.now() - lastControlsOpenedTime < 900) {
+                    window.showPlayerControls && window.showPlayerControls(true);
+                    return;
+                }
                 pc.classList.remove('!opacity-100');
                 pc.classList.add('opacity-0');
                 clearTimeout(controlsTimer);
+                document.body.style.cursor = 'none';
             } else {
                 // Controls hidden: show them
-                window.showPlayerControls && window.showPlayerControls();
+                window.showPlayerControls && window.showPlayerControls(true);
             }
         }
 
@@ -1036,21 +1097,25 @@
             const holdControls = () => {
                 controlInteracting = true;
                 clearTimeout(controlInteractTimer);
-                controlInteractTimer = setTimeout(() => { controlInteracting = false; }, 3000);
+                controlInteractTimer = setTimeout(() => { controlInteracting = false; }, 3500);
             };
 
             const show = (extendForInteraction = false) => {
+                const wasHidden = !pc.classList.contains('!opacity-100');
                 pc.classList.remove('opacity-0');
                 pc.classList.add('!opacity-100');
+                if (wasHidden) {
+                    lastControlsOpenedTime = Date.now();
+                }
                 document.body.style.cursor = 'default';
                 clearTimeout(controlsTimer);
                 // When the user just touched a button/slider, give a longer timeout so controls
                 // don't vanish mid-interaction (volume drag, seek, channel switch, etc.)
-                const delay = (extendForInteraction || controlInteracting) ? 5000 : 4000;
+                const delay = (extendForInteraction || controlInteracting) ? 5500 : 4500;
                 controlsTimer = setTimeout(() => {
                     const drawer = document.getElementById('player-drawer');
                     const drawerClosed = !drawer || drawer.classList.contains('translate-x-full');
-                    // Never auto-hide while user is touching a control element
+                    // Never auto-hide while paused, while interacting, or while drawer is open
                     if (!video.paused && !controlInteracting && document.getElementById('player-error').classList.contains('hidden') && drawerClosed) {
                         pc.classList.remove('!opacity-100');
                         pc.classList.add('opacity-0');
@@ -1063,12 +1128,35 @@
             };
             window.showPlayerControls = show;
 
+            // Bind touch listeners on sliders & control bar to hold controls open
+            const volBar = document.getElementById('volume-bar');
+            const seekBar = document.getElementById('seek-bar');
+            [volBar, seekBar].forEach(el => {
+                if (!el) return;
+                ['touchstart', 'touchmove', 'touchend', 'input', 'change'].forEach(ev => {
+                    el.addEventListener(ev, () => {
+                        holdControls();
+                        show(true);
+                    }, { passive: true });
+                });
+            });
+
+            const bottomBar = pc.querySelector('.player-gradient');
+            if (bottomBar) {
+                bottomBar.addEventListener('touchstart', () => {
+                    holdControls();
+                    show(true);
+                }, { passive: true });
+            }
+
             // Mouse move on desktop shows controls
             pm.addEventListener('mousemove', () => show());
 
-            // Mobile Touch Gestures: Single-tap toggles controls, Double-tap left/right seeks -10s / +10s
+            // Mobile Touch Gestures: Single-tap toggles controls, Double-tap seeks +/-10s (VOD only), Vertical swipe on right side adjusts volume
             let touchStartX = 0;
             let touchStartY = 0;
+            let isSwipingVolume = false;
+            let initialVolume = 1;
             let lastTapTime = 0;
             let singleTapTimeout = null;
 
@@ -1090,6 +1178,31 @@
                 if (e.touches.length === 1) {
                     touchStartX = e.touches[0].clientX;
                     touchStartY = e.touches[0].clientY;
+                    isSwipingVolume = false;
+                    initialVolume = video.volume;
+                }
+            }, { passive: true });
+
+            pm.addEventListener('touchmove', (e) => {
+                if (e.touches.length !== 1) return;
+                const touchCurX = e.touches[0].clientX;
+                const touchCurY = e.touches[0].clientY;
+                const deltaX = touchCurX - touchStartX;
+                const deltaY = touchCurY - touchStartY;
+                const rect = video.getBoundingClientRect();
+
+                // Check for vertical volume gesture on right half of video screen
+                const isRightHalf = (touchStartX - rect.left) > (rect.width * 0.5);
+                if (isRightHalf && Math.abs(deltaY) > 20 && Math.abs(deltaY) > Math.abs(deltaX) * 1.5) {
+                    isSwipingVolume = true;
+                    // Dragging up increases volume, dragging down decreases
+                    const change = -deltaY / 220;
+                    let newVol = Math.max(0, Math.min(1, Math.round((initialVolume + change) * 100) / 100));
+                    video.volume = newVol;
+                    video.muted = (newVol === 0);
+                    localStorage.setItem('aura_volume', String(newVol));
+                    syncVolumeUI(true);
+                    show(true);
                 }
             }, { passive: true });
 
@@ -1108,6 +1221,13 @@
                     show(true);
                     return;
                 }
+
+                if (isSwipingVolume) {
+                    isSwipingVolume = false;
+                    show(true);
+                    return;
+                }
+
                 if (!e.changedTouches || e.changedTouches.length !== 1) return;
                 const touchEndX = e.changedTouches[0].clientX;
                 const touchEndY = e.changedTouches[0].clientY;
@@ -1117,6 +1237,7 @@
                 const rect = video.getBoundingClientRect();
                 const x = touchEndX - rect.left;
                 const width = rect.width;
+                const live = (typeof window.isStreamLive === 'function') ? window.isStreamLive() : false;
 
                 if (now - lastTapTime < 320) {
                     // Double Tap Detected!
@@ -1124,16 +1245,16 @@
                     singleTapTimeout = null;
                     lastTapTime = 0;
 
-                    if (x < width * 0.38) {
-                        // Rewind 10s
+                    if (!live && x < width * 0.38) {
+                        // Rewind 10s (VOD only)
                         video.currentTime = Math.max(0, video.currentTime - 10);
                         triggerSeekRipple('left');
-                        show();
-                    } else if (x > width * 0.62) {
-                        // Fast Forward 10s
+                        show(true);
+                    } else if (!live && x > width * 0.62) {
+                        // Fast Forward 10s (VOD only)
                         video.currentTime = Math.min(video.duration || 999999, video.currentTime + 10);
                         triggerSeekRipple('right');
-                        show();
+                        show(true);
                     } else {
                         // Center double tap: Fullscreen
                         toggleNativeFullScreen();
@@ -1163,7 +1284,8 @@
             };
             pm.addEventListener('wheel', handleVolWheel, { passive: false });
             
-            // Desktop mouse click: single click = play/pause + show controls, double click = fullscreen
+            // Desktop mouse click: single click shows/keeps controls visible, double click = fullscreen.
+            // NEVER pauses or plays video from bare surface click — playback is controlled ONLY by playBtn / spacebar.
             let clickTimeout = null;
             video.addEventListener('click', (e) => {
                 if (Date.now() - lastTapTime < 600) return; // Prevent double firing on touch devices
@@ -1174,9 +1296,7 @@
                 } else {
                     clickTimeout = setTimeout(() => {
                         clickTimeout = null;
-                        // Single click: toggle play/pause and show controls
-                        show();
-                        video.paused ? video.play().catch(() => {}) : video.pause();
+                        togglePlayerControls();
                     }, 250);
                 }
             });
@@ -2671,6 +2791,7 @@
             }
             if (window.showPlayerControls) window.showPlayerControls();
             syncVolumeUI(false);
+            if (window.onStreamLiveDetected) window.onStreamLiveDetected();
             
             const btnDrawer = document.getElementById('btn-drawer');
             const drawer = document.getElementById('player-drawer');
@@ -3534,73 +3655,36 @@
                 return `${m}:${s.toString().padStart(2, '0')}`;
             };
 
-            const isLiveStream = () => {
-                if (currentActiveMovie) {
-                    if (currentActiveMovie.type === 'live' || currentActiveMovie.stream_type === 'live') return true;
-                }
-                if (state.currentTab === 'live') return true;
-                if (state.playerEngine) {
-                    if (state.playerEngine.liveSyncPosition !== null && state.playerEngine.liveSyncPosition !== undefined) return true;
-                    const curLevel = state.playerEngine.levels?.[state.playerEngine.currentLevel]?.details;
-                    if (curLevel && curLevel.live) return true;
-                    if (state.playerEngine.isLive) return true;
-                }
-                if (video && (video.duration === Infinity || isNaN(video.duration))) return true;
-                return false;
-            };
+            const isLiveStream = () => (typeof window.isStreamLive === 'function') ? window.isStreamLive() : false;
 
             let isSeeking = false;
 
             const updateScrubberMode = () => {
                 const live = isLiveStream();
-                if (live) {
-                    // Check if rolling DVR window is available
-                    let hasDVR = false;
-                    let dvrStart = 0;
-                    let liveEdge = 0;
-                    let dvrWindow = 0;
-                    if (video.seekable && video.seekable.length > 0) {
-                        dvrStart = video.seekable.start(0);
-                        liveEdge = video.seekable.end(video.seekable.length - 1);
-                        dvrWindow = liveEdge - dvrStart;
-                        if (dvrWindow > 60) {
-                            hasDVR = true;
-                        }
-                    }
+                const seekBarContainer = document.getElementById('seek-bar-container');
+                const rewindBtn = document.getElementById('rewind-btn');
+                const forwardBtn = document.getElementById('forward-btn');
+                const liveBtn = document.getElementById('btn-go-live');
 
-                    if (hasDVR) {
-                        seekBar.style.display = 'block';
-                        timeCurrent.style.display = 'inline-block';
-                        timeTotal.style.display = 'inline-block';
-                        seekBar.min = dvrStart;
-                        seekBar.max = liveEdge;
-                        if (!isSeeking) {
-                            seekBar.value = video.currentTime;
-                            const offset = video.currentTime - liveEdge;
-                            if (offset >= -5) {
-                                timeCurrent.innerHTML = '<span class="text-red-500 font-bold">● LIVE</span>';
-                            } else {
-                                const abs = Math.abs(Math.round(offset));
-                                const m = Math.floor(abs / 60);
-                                const s = abs % 60;
-                                timeCurrent.textContent = `-${m}:${s.toString().padStart(2, '0')}`;
-                            }
-                            timeTotal.innerHTML = '<span class="text-red-500 font-bold tracking-wider">LIVE</span>';
-                            const pct = Math.min(100, Math.max(0, ((video.currentTime - dvrStart) / (dvrWindow || 1)) * 100));
-                            seekBar.style.background = `linear-gradient(to right, #E50914 ${pct}%, rgba(255,255,255,0.2) ${pct}%)`;
-                        }
-                    } else {
-                        // Non-DVR live stream: hide seekbar and time-current entirely, show LIVE badge
-                        seekBar.style.display = 'none';
-                        timeCurrent.style.display = 'none';
-                        timeTotal.style.display = 'inline-block';
-                        timeTotal.innerHTML = '<span class="inline-flex items-center gap-1.5 px-2.5 py-0.5 rounded-full bg-red-600 text-white font-black text-[10px] tracking-wider uppercase shadow-[0_0_10px_rgba(229,9,20,0.6)]"><i class="fa-solid fa-circle text-[5px] animate-pulse"></i> LIVE</span>';
-                    }
+                if (live) {
+                    // LIVE STREAM:
+                    // 1. Hide seek bar container completely (no progress bar, no time displays)
+                    if (seekBarContainer) seekBarContainer.style.display = 'none';
+                    // 2. Hide Rewind & Forward buttons
+                    if (rewindBtn) rewindBtn.style.display = 'none';
+                    if (forwardBtn) forwardBtn.style.display = 'none';
+                    // 3. Show LIVE button that takes user directly to live edge
+                    if (liveBtn) liveBtn.style.display = 'inline-flex';
                 } else {
-                    // Standard VOD / series playback
-                    seekBar.style.display = 'block';
-                    timeCurrent.style.display = 'inline-block';
-                    timeTotal.style.display = 'inline-block';
+                    // VOD / SERIES STREAM:
+                    // 1. Show seek bar container
+                    if (seekBarContainer) seekBarContainer.style.display = 'flex';
+                    // 2. Show Rewind & Forward buttons
+                    if (rewindBtn) rewindBtn.style.display = 'flex';
+                    if (forwardBtn) forwardBtn.style.display = 'flex';
+                    // 3. Hide LIVE button
+                    if (liveBtn) liveBtn.style.display = 'none';
+
                     seekBar.min = 0;
                     if (video.duration && !isNaN(video.duration) && video.duration !== Infinity) {
                         seekBar.max = video.duration;
@@ -3619,17 +3703,18 @@
             window.onPlayerTimeUpdate = () => updateScrubberMode();
 
             video.onplay = () => {
-                playBtn.innerHTML = '<i class="fa-solid fa-pause text-2xl md:text-3xl"></i>';
+                playBtn.innerHTML = '<i class="fa-solid fa-pause text-lg sm:text-2xl md:text-3xl"></i>';
                 // Keep controls visible briefly after play so user sees the state change
                 window.showPlayerControls && window.showPlayerControls(false);
             };
             video.onpause = () => {
-                playBtn.innerHTML = '<i class="fa-solid fa-play text-2xl md:text-3xl ml-1"></i>';
+                playBtn.innerHTML = '<i class="fa-solid fa-play text-lg sm:text-2xl md:text-3xl ml-0.5"></i>';
                 // Always show controls when paused — never auto-hide while paused
                 window.showPlayerControls && window.showPlayerControls(false);
             };
             
-            playBtn.onclick = () => {
+            playBtn.onclick = (e) => {
+                if (e) e.stopPropagation();
                 if (video.paused) {
                     video.play().catch(() => {});
                 } else {
@@ -3641,33 +3726,26 @@
             document.getElementById('rewind-btn').onclick = (e) => {
                 e.stopPropagation();
                 if (isLiveStream()) {
-                    if (video.seekable && video.seekable.length > 0) {
-                        const start = video.seekable.start(0);
-                        video.currentTime = Math.max(start, video.currentTime - 10);
-                        triggerSeekRipple('left');
-                    }
+                    window.goToLiveEdge && window.goToLiveEdge();
                 } else {
                     video.currentTime = Math.max(0, video.currentTime - 10);
                     triggerSeekRipple('left');
                 }
-                window.showPlayerControls && window.showPlayerControls();
+                window.showPlayerControls && window.showPlayerControls(true);
             };
             document.getElementById('forward-btn').onclick = (e) => {
                 e.stopPropagation();
                 if (isLiveStream()) {
-                    if (video.seekable && video.seekable.length > 0) {
-                        const liveEdge = video.seekable.end(video.seekable.length - 1);
-                        video.currentTime = Math.min(liveEdge, video.currentTime + 10);
-                        triggerSeekRipple('right');
-                    }
+                    window.goToLiveEdge && window.goToLiveEdge();
                 } else {
                     video.currentTime = Math.min(video.duration || 999999, video.currentTime + 10);
                     triggerSeekRipple('right');
                 }
-                window.showPlayerControls && window.showPlayerControls();
+                window.showPlayerControls && window.showPlayerControls(true);
             };
 
-            muteBtn.onclick = () => {
+            muteBtn.onclick = (e) => {
+                if (e) e.stopPropagation();
                 toggleMute();
                 window.showPlayerControls && window.showPlayerControls(true);
             };
@@ -3678,6 +3756,18 @@
                 syncVolumeUI(true);
                 window.showPlayerControls && window.showPlayerControls(true);
             };
+
+            // Bind touches on sliders to prevent hiding while dragging
+            [volBar, seekBar].forEach(el => {
+                if (!el) return;
+                ['touchstart', 'touchmove', 'touchend'].forEach(ev => {
+                    el.addEventListener(ev, (e) => {
+                        e.stopPropagation();
+                        window.showPlayerControls && window.showPlayerControls(true);
+                    }, { passive: true });
+                });
+            });
+
             syncVolumeUI(false);
 
             seekBar.value = 0;
@@ -3707,27 +3797,9 @@
                 isSeeking = true;
                 // While the user is dragging the seek bar, hold controls open
                 window.showPlayerControls && window.showPlayerControls(true);
-                const live = isLiveStream();
-                if (live && video.seekable && video.seekable.length > 0) {
-                    const liveEdge = video.seekable.end(video.seekable.length - 1);
-                    const dvrStart = video.seekable.start(0);
-                    const dvrWindow = liveEdge - dvrStart;
-                    const offset = parseFloat(e.target.value) - liveEdge;
-                    if (offset >= -5) {
-                        timeCurrent.innerHTML = '<span class="text-red-500 font-bold">● LIVE</span>';
-                    } else {
-                        const abs = Math.abs(Math.round(offset));
-                        const m = Math.floor(abs / 60);
-                        const s = abs % 60;
-                        timeCurrent.textContent = `-${m}:${s.toString().padStart(2, '0')}`;
-                    }
-                    const pct = Math.min(100, Math.max(0, ((parseFloat(e.target.value) - dvrStart) / (dvrWindow || 1)) * 100));
-                    seekBar.style.background = `linear-gradient(to right, #E50914 ${pct}%, rgba(255,255,255,0.2) ${pct}%)`;
-                } else {
-                    timeCurrent.textContent = formatTime(e.target.value); 
-                    const val = (e.target.value / (e.target.max || 1)) * 100;
-                    seekBar.style.background = `linear-gradient(to right, #E50914 ${val}%, rgba(255,255,255,0.2) ${val}%)`;
-                }
+                timeCurrent.textContent = formatTime(e.target.value); 
+                const val = (e.target.value / (e.target.max || 1)) * 100;
+                seekBar.style.background = `linear-gradient(to right, #E50914 ${val}%, rgba(255,255,255,0.2) ${val}%)`;
             };
             
             seekBar.onchange = (e) => { 

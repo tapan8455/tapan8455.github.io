@@ -1013,13 +1013,13 @@
             if (!pc || !video) return;
             const isShowing = pc.classList.contains('!opacity-100');
             if (isShowing) {
-                // Controls visible: hide them AND toggle play/pause
+                // Only hide — never toggle play/pause from a bare tap.
+                // Play/pause is handled ONLY by the dedicated play button.
                 pc.classList.remove('!opacity-100');
                 pc.classList.add('opacity-0');
                 clearTimeout(controlsTimer);
-                video.paused ? video.play().catch(() => {}) : video.pause();
             } else {
-                // Controls hidden: just show them first (next tap will play/pause)
+                // Controls hidden: show them
                 window.showPlayerControls && window.showPlayerControls();
             }
         }
@@ -1027,27 +1027,45 @@
         function initPlayerUX() {
             const pm = document.getElementById('player-modal'), pc = document.getElementById('player-controls');
             const video = document.getElementById('video-player');
-            
-            const show = () => {
+
+            // Track whether a control button/input is being actively interacted with
+            // so we can hold the auto-hide timer open while the user is using controls.
+            let controlInteracting = false;
+            let controlInteractTimer = null;
+
+            const holdControls = () => {
+                controlInteracting = true;
+                clearTimeout(controlInteractTimer);
+                controlInteractTimer = setTimeout(() => { controlInteracting = false; }, 3000);
+            };
+
+            const show = (extendForInteraction = false) => {
                 pc.classList.remove('opacity-0');
                 pc.classList.add('!opacity-100');
                 document.body.style.cursor = 'default';
                 clearTimeout(controlsTimer);
+                // When the user just touched a button/slider, give a longer timeout so controls
+                // don't vanish mid-interaction (volume drag, seek, channel switch, etc.)
+                const delay = (extendForInteraction || controlInteracting) ? 5000 : 4000;
                 controlsTimer = setTimeout(() => {
                     const drawer = document.getElementById('player-drawer');
                     const drawerClosed = !drawer || drawer.classList.contains('translate-x-full');
-                    if (!video.paused && document.getElementById('player-error').classList.contains('hidden') && drawerClosed) {
+                    // Never auto-hide while user is touching a control element
+                    if (!video.paused && !controlInteracting && document.getElementById('player-error').classList.contains('hidden') && drawerClosed) {
                         pc.classList.remove('!opacity-100');
                         pc.classList.add('opacity-0');
-                        document.body.style.cursor = 'none'; // Hide cursor during playback
+                        document.body.style.cursor = 'none';
+                    } else if (controlInteracting || !drawerClosed) {
+                        // If still interacting, reschedule
+                        show(true);
                     }
-                }, 4000);
+                }, delay);
             };
             window.showPlayerControls = show;
-            
+
             // Mouse move on desktop shows controls
-            pm.addEventListener('mousemove', show);
-            
+            pm.addEventListener('mousemove', () => show());
+
             // Mobile Touch Gestures: Single-tap toggles controls, Double-tap left/right seeks -10s / +10s
             let touchStartX = 0;
             let touchStartY = 0;
@@ -1055,8 +1073,18 @@
             let singleTapTimeout = null;
 
             pm.addEventListener('touchstart', (e) => {
-                if (e.target.closest('#player-drawer') || e.target.closest('#subtitles-modal') || e.target.closest('#quality-modal') || e.target.closest('button') || e.target.closest('input')) {
-                    show();
+                const isControlElement = e.target.closest('#player-drawer') ||
+                    e.target.closest('#subtitles-modal') ||
+                    e.target.closest('#quality-modal') ||
+                    e.target.closest('button') ||
+                    e.target.closest('input') ||
+                    e.target.closest('#player-controls .player-gradient') ||
+                    e.target.closest('#player-controls > div:first-child');
+
+                if (isControlElement) {
+                    // User touched a control — keep controls visible and extend timer
+                    holdControls();
+                    show(true);
                     return;
                 }
                 if (e.touches.length === 1) {
@@ -1066,7 +1094,18 @@
             }, { passive: true });
 
             pm.addEventListener('touchend', (e) => {
-                if (e.target.closest('#player-drawer') || e.target.closest('#subtitles-modal') || e.target.closest('#quality-modal') || e.target.closest('button') || e.target.closest('input')) {
+                const isControlElement = e.target.closest('#player-drawer') ||
+                    e.target.closest('#subtitles-modal') ||
+                    e.target.closest('#quality-modal') ||
+                    e.target.closest('button') ||
+                    e.target.closest('input') ||
+                    e.target.closest('#player-controls .player-gradient') ||
+                    e.target.closest('#player-controls > div:first-child');
+
+                if (isControlElement) {
+                    // Touched a control element — refresh hold, do NOT toggle play/pause
+                    holdControls();
+                    show(true);
                     return;
                 }
                 if (!e.changedTouches || e.changedTouches.length !== 1) return;
@@ -3579,10 +3618,26 @@
             window.onStreamLiveDetected = () => updateScrubberMode();
             window.onPlayerTimeUpdate = () => updateScrubberMode();
 
-            video.onplay = () => playBtn.innerHTML = '<i class="fa-solid fa-pause text-2xl md:text-3xl"></i>';
-            video.onpause = () => playBtn.innerHTML = '<i class="fa-solid fa-play text-2xl md:text-3xl ml-1"></i>';
+            video.onplay = () => {
+                playBtn.innerHTML = '<i class="fa-solid fa-pause text-2xl md:text-3xl"></i>';
+                // Keep controls visible briefly after play so user sees the state change
+                window.showPlayerControls && window.showPlayerControls(false);
+            };
+            video.onpause = () => {
+                playBtn.innerHTML = '<i class="fa-solid fa-play text-2xl md:text-3xl ml-1"></i>';
+                // Always show controls when paused — never auto-hide while paused
+                window.showPlayerControls && window.showPlayerControls(false);
+            };
             
-            playBtn.onclick = () => video.paused ? video.play() : video.pause();
+            playBtn.onclick = () => {
+                if (video.paused) {
+                    video.play().catch(() => {});
+                } else {
+                    video.pause();
+                }
+                // Refresh the auto-hide timer so controls stay visible after toggling
+                window.showPlayerControls && window.showPlayerControls(true);
+            };
             document.getElementById('rewind-btn').onclick = (e) => {
                 e.stopPropagation();
                 if (isLiveStream()) {
@@ -3612,12 +3667,16 @@
                 window.showPlayerControls && window.showPlayerControls();
             };
 
-            muteBtn.onclick = () => toggleMute();
+            muteBtn.onclick = () => {
+                toggleMute();
+                window.showPlayerControls && window.showPlayerControls(true);
+            };
             volBar.oninput = (e) => {
                 video.volume = parseFloat(e.target.value);
                 video.muted = (video.volume === 0);
                 localStorage.setItem('aura_volume', String(video.volume));
                 syncVolumeUI(true);
+                window.showPlayerControls && window.showPlayerControls(true);
             };
             syncVolumeUI(false);
 
@@ -3646,6 +3705,8 @@
 
             seekBar.oninput = (e) => { 
                 isSeeking = true;
+                // While the user is dragging the seek bar, hold controls open
+                window.showPlayerControls && window.showPlayerControls(true);
                 const live = isLiveStream();
                 if (live && video.seekable && video.seekable.length > 0) {
                     const liveEdge = video.seekable.end(video.seekable.length - 1);

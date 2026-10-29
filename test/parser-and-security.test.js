@@ -333,3 +333,47 @@ test('playStream automatically resolves last-watched episode when epIndex=0 was 
   const resExplicitEp2 = resolveEpisodeToPlay('100', true, 1, 0);
   assert.strictEqual(resExplicitEp2.targetEpIdx, 1, 'Explicit episode selection must be respected');
 });
+
+// ── 12. Favorite Bookmarking Tests ─────────────────────────────────
+test('isFavorite and toggleFavorite correctly manage favorites state without errors', () => {
+  const favorites = [];
+  function isFavorite(id) {
+    if (!id || !favorites) return false;
+    return favorites.some(f => String(f.id) === String(id));
+  }
+  function toggleFavorite(item) {
+    if (!item || !item.id) return;
+    const id = String(item.id);
+    const idx = favorites.findIndex(f => String(f.id) === id);
+    if (idx > -1) {
+      favorites.splice(idx, 1);
+    } else {
+      favorites.unshift(item);
+    }
+  }
+
+  assert.strictEqual(isFavorite('ch-101'), false);
+  toggleFavorite({ id: 'ch-101', title: 'BBC News' });
+  assert.strictEqual(isFavorite('ch-101'), true);
+  assert.strictEqual(favorites.length, 1);
+  toggleFavorite({ id: 'ch-101', title: 'BBC News' });
+  assert.strictEqual(isFavorite('ch-101'), false);
+  assert.strictEqual(favorites.length, 0);
+});
+
+// ── 13. Category Stream Normalization & Malformed Item Protection ──
+test('Raw category streams parser handles arrays, objects, and filters malformed items', () => {
+  const rawProviderData = {
+    "0": { stream_id: 101, name: "HBO HD", stream_type: "live" },
+    "1": { stream_id: 102, name: "Cinemax", stream_type: "live" },
+    "error": "status ok", // non-stream attribute
+    "null_entry": null
+  };
+
+  let arr = Array.isArray(rawProviderData) ? rawProviderData : (rawProviderData && typeof rawProviderData === 'object' ? Object.values(rawProviderData) : []);
+  let validItems = arr.filter(s => s && typeof s === 'object' && (s.stream_id || s.series_id || s.id || s.name || s.title));
+
+  assert.strictEqual(validItems.length, 2, 'Should extract only valid channel items and filter out non-stream attributes/nulls');
+  assert.strictEqual(validItems[0].name, 'HBO HD');
+  assert.strictEqual(validItems[1].name, 'Cinemax');
+});

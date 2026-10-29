@@ -48,7 +48,7 @@ tailwind.config = {
                     const directUrl = `${srv}/player_api.php?username=${u}&password=${p}${action}${params}`;
 
                     try {
-                        const directRes = await fetch(directUrl);
+                        const directRes = await fetch(directUrl, { signal: AbortSignal.timeout(15000) });
                         if (!directRes.ok) {
                             throw new Error(`Provider returned HTTP ${directRes.status}`);
                         }
@@ -58,11 +58,13 @@ tailwind.config = {
                     } catch (directErr) {
                         const customProxy = (localStorage.getItem('aura_custom_proxy') || '').trim();
                         if (customProxy) {
-                            const proxiedUrl = customProxy.includes('%s') 
-                                ? customProxy.replace('%s', encodeURIComponent(directUrl)) 
-                                : `${customProxy.replace(/\/+$/, '')}/${encodeURIComponent(directUrl)}`;
-                            const pRes = await fetch(proxiedUrl);
-                            if (pRes.ok) return await pRes.json();
+                            try {
+                                const proxiedUrl = customProxy.includes('%s') 
+                                    ? customProxy.replace('%s', encodeURIComponent(directUrl)) 
+                                    : `${customProxy.replace(/\/+$/, '')}/${encodeURIComponent(directUrl)}`;
+                                const pRes = await fetch(proxiedUrl, { signal: AbortSignal.timeout(15000) });
+                                if (pRes.ok) return await pRes.json();
+                            } catch (_) {}
                         }
                         throw new Error(`Provider request failed: ${directErr.message}. If your provider lacks CORS on HTTPS web, use direct media playback or configure an HTTPS CORS proxy in settings.`);
                     }
@@ -87,7 +89,7 @@ tailwind.config = {
                     const testUrl = `${srv}/player_api.php?username=${u}&password=${p}`;
 
                     try {
-                        const res = await fetch(testUrl);
+                        const res = await fetch(testUrl, { signal: AbortSignal.timeout(15000) });
                         if (!res.ok) return { success: false, error: `Server error HTTP ${res.status}` };
                         const data = await res.json();
                         if (data && data.user_info) {
@@ -104,7 +106,7 @@ tailwind.config = {
                                 const proxiedUrl = customProxy.includes('%s') 
                                     ? customProxy.replace('%s', encodeURIComponent(testUrl)) 
                                     : `${customProxy.replace(/\/+$/, '')}/${encodeURIComponent(testUrl)}`;
-                                const pRes = await fetch(proxiedUrl);
+                                const pRes = await fetch(proxiedUrl, { signal: AbortSignal.timeout(15000) });
                                 if (pRes.ok) {
                                     const pData = await pRes.json();
                                     return { success: true, data: pData };
@@ -526,6 +528,50 @@ tailwind.config = {
             searchFilterType: 'all',
             activeStreamUrl: ''
         };
+
+        function isFavorite(id) {
+            if (!id || !state.favorites) return false;
+            return state.favorites.some(f => String(f.id) === String(id));
+        }
+
+        function toggleFavorite(movie, event) {
+            if (event) event.stopPropagation();
+            if (typeof movie === 'string') {
+                try {
+                    movie = JSON.parse(decodeURIComponent(movie));
+                } catch (e) {
+                    console.error("toggleFavorite parse error:", e);
+                    return;
+                }
+            }
+            if (!movie || !movie.id) return;
+            const id = String(movie.id);
+            const idx = state.favorites.findIndex(f => String(f.id) === id);
+            if (idx > -1) {
+                state.favorites.splice(idx, 1);
+                showToast('Removed from Favorites');
+            } else {
+                state.favorites.unshift(movie);
+                showToast('Added to Favorites');
+            }
+            localStorage.setItem('aura_favorites', JSON.stringify(state.favorites));
+            
+            // Update heart icons across the UI
+            document.querySelectorAll(`.fav-btn-${id}`).forEach(btn => {
+                const fav = isFavorite(id);
+                btn.innerHTML = fav ? '<i class="fa-solid fa-heart text-red-500"></i>' : '<i class="fa-regular fa-heart"></i>';
+            });
+            const detailFavBtn = document.getElementById('detail-fav-btn');
+            if (detailFavBtn && state.currentDetailMovie && String(state.currentDetailMovie.id) === id) {
+                detailFavBtn.innerHTML = isFavorite(id) ? '<i class="fa-solid fa-heart text-red-500"></i>' : '<i class="fa-regular fa-heart"></i>';
+            }
+
+            if (state.currentTab === 'favorites') {
+                renderFavoritesView();
+            }
+        }
+        window.isFavorite = isFavorite;
+        window.toggleFavorite = toggleFavorite;
 
         function savePlaybackProgress(id, currentTime, duration) {
             if (!id || isNaN(currentTime) || isNaN(duration) || duration <= 0) return;
@@ -2275,6 +2321,7 @@ tailwind.config = {
 
         async function renderGridContent(catId, btnElement = null, catName = null) {
             const grid = document.getElementById('main-grid');
+            if (!grid) return;
             
             if (btnElement) {
                 document.querySelectorAll('.sidebar-cat-btn').forEach(b => {
@@ -2299,72 +2346,97 @@ tailwind.config = {
             let htmlPayload = '';
             let streams = [];
 
-            if (catId === 'all') {
-                // Secondary check: Exclude Live TV from Continue Watching in Movies/Series tabs
-                const eligibleHistory = state.history.filter(m => {
-                    if (m.type === 'live' || m.stream_type === 'live') return false;
-                    if (state.currentTab === 'series') return m.type === 'series';
-                    return m.type === 'vod' || !m.type || m.type === 'movie';
-                });
+            try {
+                if (catId === 'all') {
+                    // Secondary check: Exclude Live TV from Continue Watching in Movies/Series tabs
+                    const eligibleHistory = (state.history || []).filter(m => {
+                        if (m.type === 'live' || m.stream_type === 'live') return false;
+                        if (state.currentTab === 'series') return m.type === 'series';
+                        return m.type === 'vod' || !m.type || m.type === 'movie';
+                    });
 
-                if (eligibleHistory.length > 0 && state.currentTab !== 'live') {
-                    htmlPayload += `
-                        <div id="continue-watching-section" class="w-full">
-                            <div class="col-span-full flex items-center justify-between mb-4 mt-2">
-                                <h2 class="font-bold text-white text-lg flex items-center gap-2">
-                                    <i class="fa-solid fa-clock-rotate-left text-primary"></i> Continue Watching
-                                </h2>
-                                <button onclick="clearAllHistory()" class="text-xs text-gray-400 hover:text-red-400 flex items-center gap-1.5 px-3 py-1.5 rounded-lg bg-white/5 hover:bg-red-500/10 border border-white/5 hover:border-red-500/20 transition-all font-medium">
-                                    <i class="fa-regular fa-trash-can"></i> Clear History
-                                </button>
+                    if (eligibleHistory.length > 0 && state.currentTab !== 'live') {
+                        htmlPayload += `
+                            <div id="continue-watching-section" class="w-full">
+                                <div class="col-span-full flex items-center justify-between mb-4 mt-2">
+                                    <h2 class="font-bold text-white text-lg flex items-center gap-2">
+                                        <i class="fa-solid fa-clock-rotate-left text-primary"></i> Continue Watching
+                                    </h2>
+                                    <button onclick="clearAllHistory()" class="text-xs text-gray-400 hover:text-red-400 flex items-center gap-1.5 px-3 py-1.5 rounded-lg bg-white/5 hover:bg-red-500/10 border border-white/5 hover:border-red-500/20 transition-all font-medium">
+                                        <i class="fa-regular fa-trash-can"></i> Clear History
+                                    </button>
+                                </div>
+                                <div id="continue-watching-carousel" class="grid grid-cols-2 sm:grid-cols-3 md:grid-cols-4 lg:grid-cols-5 xl:grid-cols-7 gap-4 md:gap-6 content-start w-full mb-8">
+                                    ${eligibleHistory.slice(0, 14).map((s, i) => createCardHTML(s, i, true, false)).join('')}
+                                </div>
+                                <div class="w-full h-px bg-white/5 my-6"></div>
                             </div>
-                            <div id="continue-watching-carousel" class="grid grid-cols-2 sm:grid-cols-3 md:grid-cols-4 lg:grid-cols-5 xl:grid-cols-7 gap-4 md:gap-6 content-start w-full mb-8">
-                                ${eligibleHistory.slice(0, 14).map((s, i) => createCardHTML(s, i, true, false)).join('')}
-                            </div>
-                            <div class="w-full h-px bg-white/5 my-6"></div>
-                        </div>
-                    `;
-                }
-                const cats = state.categories[state.currentTab] || [];
-                // Look through categories (up to 25) until we find one with available streams
-                for (let i = 0; i < Math.min(cats.length, 25); i++) {
-                    const cat = cats[i];
-                    if (!cat || !cat.category_id || !cat.category_name) continue;
-                    // Skip divider labels like "--- 4K UHD ---"
-                    if (/^[-=_s]+$/.test(cat.category_name) || /^[-s]{2,}/.test(cat.category_name)) continue;
-                    const sList = await getCategoryStreams(fetchAction, cat.category_id);
-                    if (sList && sList.length > 0) {
-                        streams = sList;
-                        const label = state.currentTab === 'live' ? `Live Channels in ${esc(cat.category_name)}` : `Popular in ${esc(cat.category_name)}`;
-                        htmlPayload += `<h2 class="col-span-full font-bold text-white text-lg mb-4 flex items-center gap-2"><i class="fa-solid fa-fire text-orange-500"></i> ${label}</h2>`;
-                        break;
+                        `;
                     }
-                }
-                // Fallback: If still empty, fetch all streams directly without category filter
-                if (!streams || streams.length === 0) {
-                    streams = await getCategoryStreams(fetchAction, 'all');
-                }
-            } else {
-                streams = await getCategoryStreams(fetchAction, catId);
-            }
+                    const cats = (state.categories[state.currentTab] || []).filter(c => {
+                        if (!c || !c.category_id || !c.category_name) return false;
+                        return !/^[-=_s]+$/.test(c.category_name) && !/^[-s]{2,}/.test(c.category_name);
+                    });
 
-            state.activeCategoryStreams = streams || [];
+                    // Search through candidate categories in fast parallel batches of 4
+                    for (let i = 0; i < Math.min(cats.length, 12); i += 4) {
+                        const batch = cats.slice(i, i + 4);
+                        const results = await Promise.allSettled(batch.map(c => getCategoryStreams(fetchAction, c.category_id)));
+                        let found = false;
+                        for (let j = 0; j < results.length; j++) {
+                            const res = results[j];
+                            if (res.status === 'fulfilled' && res.value && res.value.length > 0) {
+                                streams = res.value;
+                                const matchedCat = batch[j];
+                                const label = state.currentTab === 'live' ? `Live Channels in ${esc(matchedCat.category_name)}` : `Popular in ${esc(matchedCat.category_name)}`;
+                                htmlPayload += `<h2 class="col-span-full font-bold text-white text-lg mb-4 flex items-center gap-2"><i class="fa-solid fa-fire text-orange-500"></i> ${label}</h2>`;
+                                found = true;
+                                break;
+                            }
+                        }
+                        if (found) break;
+                    }
 
-            if (streams && streams.length > 0) {
-                const isLive = state.currentTab === 'live';
-                const cardsHtml = streams.map((s, i) => createCardHTML(s, i, false, isLive)).join('');
-                htmlPayload += `<div class="grid grid-cols-2 sm:grid-cols-3 md:grid-cols-4 lg:grid-cols-5 xl:grid-cols-7 gap-4 md:gap-6 content-start w-full">${cardsHtml}</div>`;
-                grid.innerHTML = `<div class="flex flex-col w-full">${htmlPayload}</div>`;
-            } else {
-                if (catId !== 'all') {
-                    grid.innerHTML = `<div class="col-span-full flex flex-col items-center justify-center pt-32 text-gray-500 w-full"><i class="fa-solid fa-folder-open text-4xl mb-3 opacity-50"></i><p class="font-semibold">No content available in this category.</p></div>`;
+                    // Fallback: If still empty and no categories existed, fetch all streams directly
+                    if ((!streams || streams.length === 0) && cats.length === 0) {
+                        streams = await getCategoryStreams(fetchAction, 'all');
+                    }
                 } else {
-                    if (htmlPayload) {
-                        grid.innerHTML = `<div class="flex flex-col w-full">${htmlPayload}</div>`;
+                    streams = await getCategoryStreams(fetchAction, catId);
+                }
+
+                state.activeCategoryStreams = streams || [];
+
+                if (streams && streams.length > 0) {
+                    const isLive = state.currentTab === 'live';
+                    const cardsHtml = streams.map((s, i) => createCardHTML(s, i, false, isLive)).join('');
+                    htmlPayload += `<div class="grid grid-cols-2 sm:grid-cols-3 md:grid-cols-4 lg:grid-cols-5 xl:grid-cols-7 gap-4 md:gap-6 content-start w-full">${cardsHtml}</div>`;
+                    grid.innerHTML = `<div class="flex flex-col w-full">${htmlPayload}</div>`;
+                } else {
+                    if (catId !== 'all') {
+                        grid.innerHTML = `<div class="col-span-full flex flex-col items-center justify-center pt-32 text-gray-500 w-full"><i class="fa-solid fa-folder-open text-4xl mb-3 opacity-50"></i><p class="font-semibold">No content available in this category.</p></div>`;
                     } else {
-                        grid.innerHTML = `<div class="col-span-full flex flex-col items-center justify-center pt-32 text-gray-500 w-full"><i class="fa-solid fa-folder-open text-4xl mb-3 opacity-50"></i><p class="font-semibold">No channels or movies available.</p></div>`;
+                        if (htmlPayload) {
+                            grid.innerHTML = `<div class="flex flex-col w-full">${htmlPayload}</div>`;
+                        } else {
+                            grid.innerHTML = `<div class="col-span-full flex flex-col items-center justify-center pt-32 text-gray-500 w-full"><i class="fa-solid fa-folder-open text-4xl mb-3 opacity-50"></i><p class="font-semibold">No channels or movies available.</p></div>`;
+                        }
                     }
                 }
+            } catch (err) {
+                console.error('[AURA Grid] Error loading content:', err);
+                grid.innerHTML = `
+                    <div class="col-span-full flex flex-col items-center justify-center pt-24 text-center px-4">
+                        <div class="w-16 h-16 bg-red-500/10 rounded-full flex items-center justify-center mb-4 border border-red-500/20">
+                            <i class="fa-solid fa-triangle-exclamation text-2xl text-red-500"></i>
+                        </div>
+                        <h3 class="text-lg font-bold text-white mb-2">Unable to Load Titles</h3>
+                        <p class="text-xs text-gray-400 mb-6 max-w-md leading-relaxed">${esc(err.message || 'Stream list request timed out or was blocked.')}</p>
+                        <button onclick="renderGridContent('${jsEsc(catId)}', null, '${jsEsc(catName || '')}')" class="bg-primary hover:bg-red-700 text-white px-5 py-2.5 rounded-lg text-xs font-bold transition-colors flex items-center gap-2">
+                            <i class="fa-solid fa-rotate-right"></i> Try Again
+                        </button>
+                    </div>
+                `;
             }
         }
 
@@ -2447,13 +2519,15 @@ tailwind.config = {
             const rawData = await fetchXC(action, param).catch(() => []);
             if (!rawData) return [];
             
-            let arr = Array.isArray(rawData) ? rawData : (typeof rawData === 'object' ? Object.values(rawData) : []);
+            let arr = Array.isArray(rawData) ? rawData : (rawData && typeof rawData === 'object' ? Object.values(rawData) : []);
             if (action === 'get_live_streams' && catId !== 'all' && tvPrefs.customized && tvPrefs.customized[catId]) {
                 const allowed = tvPrefs.customized[catId].map(id => String(id));
                 arr = arr.filter(s => allowed.includes(String(s.stream_id)));
             }
 
-            let normalized = arr.map(s => normalizeStream(s, action.includes('live') ? 'live' : (action.includes('series') ? 'series' : 'vod'), catId)).slice(0, 300);
+            // Ensure only valid stream/channel objects are normalized
+            let validItems = arr.filter(s => s && typeof s === 'object' && (s.stream_id || s.series_id || s.id || s.name || s.title));
+            let normalized = validItems.map(s => normalizeStream(s, action.includes('live') ? 'live' : (action.includes('series') ? 'series' : 'vod'), catId)).slice(0, 300);
             state.streams[cacheKey] = normalized;
             return normalized;
         }

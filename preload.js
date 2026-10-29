@@ -9,6 +9,7 @@ contextBridge.exposeInMainWorld('auraNative', {
   openExternal: (url) => ipcRenderer.invoke('aura:open-external', url),
   platform: process.platform,
   version: process.versions.electron,
+  downloadFile: (url, filename) => ipcRenderer.invoke('aura:download-file', { url, filename }),
   mediaProxy: (url) => {
     if (!url) return '';
     if (url.startsWith('aura://stream?url=')) return url;

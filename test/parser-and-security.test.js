@@ -128,3 +128,68 @@ https://cdn.example.com/live/segment_02.ts
   assert.ok(rewritten.includes(encodeURIComponent('http://provider.tv:8080/live/segment_01.ts')), 'Relative segment must be resolved against base');
   assert.ok(rewritten.includes(encodeURIComponent('https://cdn.example.com/live/segment_02.ts')), 'Absolute segment must be encoded directly');
 });
+
+// ── 5. Watch Progress & Time Formatting Tests ─────────────────────
+test('formatTime correctly formats MM:SS and HH:MM:SS', () => {
+  function formatTime(sec) {
+    if (isNaN(sec) || sec === Infinity || sec <= 0) return "0:00";
+    const h = Math.floor(sec / 3600), m = Math.floor((sec % 3600) / 60), s = Math.floor(sec % 60);
+    if (h > 0) {
+      return `${h}:${m < 10 ? '0' : ''}${m}:${s < 10 ? '0' : ''}${s}`;
+    }
+    return `${m}:${s < 10 ? '0' : ''}${s}`;
+  }
+
+  assert.strictEqual(formatTime(0), '0:00');
+  assert.strictEqual(formatTime(65), '1:05');
+  assert.strictEqual(formatTime(2535), '42:15');
+  assert.strictEqual(formatTime(3661), '1:01:01');
+});
+
+test('Playback progress calculation correctly bounds percentage between 0 and 100', () => {
+  function calcProgress(currentTime, duration) {
+    if (isNaN(currentTime) || isNaN(duration) || duration <= 0) return 0;
+    const pct = Math.round((currentTime / duration) * 100);
+    return Math.min(100, Math.max(0, pct));
+  }
+
+  assert.strictEqual(calcProgress(500, 2000), 25);
+  assert.strictEqual(calcProgress(2500, 2000), 100);
+  assert.strictEqual(calcProgress(-50, 2000), 0);
+});
+
+// ── 6. TV Spatial Navigation Metric Tests ─────────────────────────
+test('Spatial navigation distance metric prefers inline targets over lateral targets', () => {
+  function computeScore(cur, cand, dir) {
+    const dx = cand.x - cur.x;
+    const dy = cand.y - cur.y;
+    let valid = false;
+    let primaryDist = 0;
+    let secondaryDist = 0;
+
+    if (dir === 'down') {
+      if (dy > 0) {
+        valid = true;
+        primaryDist = dy;
+        secondaryDist = Math.abs(dx);
+      }
+    } else if (dir === 'right') {
+      if (dx > 0) {
+        valid = true;
+        primaryDist = dx;
+        secondaryDist = Math.abs(dy);
+      }
+    }
+    if (!valid) return Infinity;
+    return primaryDist * 1.0 + secondaryDist * 2.2;
+  }
+
+  const cur = { x: 100, y: 100 };
+  const directlyBelow = { x: 100, y: 300 }; // primary = 200, secondary = 0 -> score = 200
+  const diagonal = { x: 250, y: 250 };      // primary = 150, secondary = 150 -> score = 150 + 330 = 480
+
+  const scoreDirect = computeScore(cur, directlyBelow, 'down');
+  const scoreDiag = computeScore(cur, diagonal, 'down');
+
+  assert.ok(scoreDirect < scoreDiag, 'Directly below candidate must have a lower score than diagonal candidate');
+});

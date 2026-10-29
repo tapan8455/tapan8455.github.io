@@ -306,6 +306,12 @@ app.whenReady().then(() => {
     if (/^https?:\/\//i.test(url)) shell.openExternal(url);
   });
 
+  ipcMain.handle('aura:download-file', async (_e, { url }) => {
+    if (!mainWindow || !url) return false;
+    mainWindow.webContents.downloadURL(url);
+    return true;
+  });
+
   createWindow();
 
   app.on('activate', () => {

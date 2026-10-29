@@ -202,6 +202,10 @@ async function handleStreamProxy(req, res) {
       'Accept-Ranges': 'bytes'
     };
 
+    if (reqUrl.searchParams.get('download')) {
+      outHeaders['Content-Disposition'] = 'attachment';
+    }
+
     if (upstream.headers.get('content-range')) {
       outHeaders['Content-Range'] = upstream.headers.get('content-range');
     }

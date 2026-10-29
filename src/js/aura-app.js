@@ -81,6 +81,19 @@ tailwind.config = {
                 },
                 openExternal: (url) => {
                     window.open(url, '_blank', 'noopener,noreferrer');
+                },
+                downloadFile: async ({ url, filename }) => {
+                    const downloadUrl = `/stream?url=${encodeURIComponent(url)}&download=1`;
+                    const a = document.createElement('a');
+                    a.href = downloadUrl;
+                    a.download = filename || 'video.mp4';
+                    a.style.display = 'none';
+                    document.body.appendChild(a);
+                    a.click();
+                    setTimeout(() => {
+                        if (document.body.contains(a)) document.body.removeChild(a);
+                    }, 2000);
+                    return { success: true };
                 }
             };
         }
@@ -403,6 +416,13 @@ tailwind.config = {
             streams: {}, 
             history: safeArray('aura_history'),
             favorites: safeArray('aura_favorites'),
+            playbackProgress: safeJSON('aura_playback_progress', {}),
+            requestedResumeTime: 0,
+            nextEpOverlayTimer: null,
+            nextEpCountdownSec: 10,
+            nextEpOverlayShown: false,
+            nextEpDismissedForCurrent: false,
+            liveViewMode: 'grid',
             playerEngine: null,
             candidateWatchdog: null,
             playbackSessionId: 0,
@@ -425,49 +445,525 @@ tailwind.config = {
             activeStreamUrl: ''
         };
 
-        function isFavorite(id) {
-            return state.favorites.some(f => String(f.id) === String(id));
+        function savePlaybackProgress(id, currentTime, duration) {
+            if (!id || isNaN(currentTime) || isNaN(duration) || duration <= 0) return;
+            const key = String(id);
+            const percentage = Math.round((currentTime / duration) * 100);
+            state.playbackProgress[key] = {
+                currentTime: Math.floor(currentTime),
+                duration: Math.floor(duration),
+                percentage: Math.min(100, Math.max(0, percentage)),
+                updatedAt: Date.now()
+            };
+            try {
+                localStorage.setItem('aura_playback_progress', JSON.stringify(state.playbackProgress));
+            } catch (_) {}
         }
 
-        function toggleFavorite(movie, event) {
-            if (event) event.stopPropagation();
-            if (typeof movie === 'string') {
+        function formatTime(sec) {
+            if (isNaN(sec) || sec === Infinity || sec <= 0) return "0:00";
+            const h = Math.floor(sec / 3600), m = Math.floor((sec % 3600) / 60), s = Math.floor(sec % 60);
+            if (h > 0) {
+                return `${h}:${m < 10 ? '0' : ''}${m}:${s < 10 ? '0' : ''}${s}`;
+            }
+            return `${m}:${s < 10 ? '0' : ''}${s}`;
+        }
+
+        // --- Native Apple AirPlay & Official Google Cast SDK Integration ---
+        window['__onGCastApiAvailable'] = function(isAvailable) {
+            if (isAvailable && window.cast && window.cast.framework) {
                 try {
-                    movie = JSON.parse(decodeURIComponent(movie));
+                    window.cast.framework.CastContext.getInstance().setOptions({
+                        receiverApplicationId: chrome.cast.media.DEFAULT_MEDIA_RECEIVER_APP_ID,
+                        autoJoinPolicy: chrome.cast.AutoJoinPolicy.ORIGIN_SCOPED
+                    });
                 } catch (e) {
-                    console.error("toggleFavorite parse error:", e);
-                    return;
+                    console.warn("CastContext init exception:", e);
                 }
             }
-            if (!movie || !movie.id) return;
-            const id = String(movie.id);
-            const idx = state.favorites.findIndex(f => String(f.id) === id);
-            if (idx > -1) {
-                state.favorites.splice(idx, 1);
-                showToast(`Removed from Favorites`);
-            } else {
-                state.favorites.unshift(movie);
-                showToast(`Added to Favorites`);
-            }
-            localStorage.setItem('aura_favorites', JSON.stringify(state.favorites));
-            
-            // Update heart icons across the UI
-            document.querySelectorAll(`.fav-btn-${id}`).forEach(btn => {
-                const fav = isFavorite(id);
-                btn.innerHTML = fav ? '<i class="fa-solid fa-heart text-red-500"></i>' : '<i class="fa-regular fa-heart"></i>';
-            });
-            const detailFavBtn = document.getElementById('detail-fav-btn');
-            if (detailFavBtn && state.currentDetailMovie && String(state.currentDetailMovie.id) === id) {
-                detailFavBtn.innerHTML = isFavorite(id) ? '<i class="fa-solid fa-heart text-red-500"></i>' : '<i class="fa-regular fa-heart"></i>';
+        };
+
+        function triggerCastOrAirPlay() {
+            const video = document.getElementById('video-player');
+
+            // 1. Apple Safari / WebKit Native AirPlay
+            if (video && typeof video.webkitShowPlaybackTargetPicker === 'function') {
+                try {
+                    video.webkitShowPlaybackTargetPicker();
+                    return;
+                } catch (e) {
+                    console.warn("AirPlay picker error:", e);
+                }
             }
 
-            if (state.currentTab === 'favorites') {
-                renderFavoritesView();
+            // 2. Google Cast SDK (Chromecast, Google TV, Android TV)
+            if (window.cast && window.cast.framework && window.chrome && window.chrome.cast) {
+                try {
+                    const castContext = window.cast.framework.CastContext.getInstance();
+                    
+                    const loadCurrentMedia = (session) => {
+                        let streamUrl = state.activeStreamUrl;
+                        if (!streamUrl && state.currentActiveMovie) {
+                            const serverClean = getServer();
+                            const u = encodeURIComponent(config.user);
+                            const p = encodeURIComponent(config.pass);
+                            const m = state.currentActiveMovie;
+                            if (m.type === 'live') {
+                                streamUrl = `${serverClean}/live/${u}/${p}/${m.id}.m3u8`;
+                            } else if (m.type === 'episode') {
+                                streamUrl = `${serverClean}/series/${u}/${p}/${m.id}.${m.ext || 'mp4'}`;
+                            } else {
+                                streamUrl = `${serverClean}/movie/${u}/${p}/${m.id}.${m.ext || 'mp4'}`;
+                            }
+                        }
+
+                        if (!streamUrl) {
+                            showToast("Start playing a channel or movie first to Cast.");
+                            return;
+                        }
+
+                        let castMediaUrl = streamUrl;
+                        if (castMediaUrl.startsWith('http://') && window.location.protocol === 'https:') {
+                            castMediaUrl = `${window.location.origin}/stream?url=${encodeURIComponent(castMediaUrl)}`;
+                        }
+
+                        const contentType = castMediaUrl.includes('.m3u8') ? 'application/x-mpegurl' : 'video/mp4';
+                        const mediaInfo = new chrome.cast.media.MediaInfo(castMediaUrl, contentType);
+                        mediaInfo.streamType = (state.currentActiveMovie?.type === 'live' || state.currentTab === 'live') ? chrome.cast.media.StreamType.LIVE : chrome.cast.media.StreamType.BUFFERED;
+                        mediaInfo.metadata = new chrome.cast.media.GenericMediaMetadata();
+                        mediaInfo.metadata.title = state.currentActiveMovie ? state.currentActiveMovie.title : 'AURA IPTV';
+                        if (state.currentActiveMovie?.img) {
+                            mediaInfo.metadata.images = [{ url: state.currentActiveMovie.img }];
+                        }
+
+                        const request = new chrome.cast.media.LoadRequest(mediaInfo);
+                        if (video && !isNaN(video.currentTime) && video.currentTime > 0) {
+                            request.currentTime = video.currentTime;
+                        }
+                        session.loadMedia(request).then(() => {
+                            showToast("Connected to Cast receiver!");
+                        }).catch(err => {
+                            console.warn("Cast loadMedia error:", err);
+                            showToast("Failed to load stream on Cast device.");
+                        });
+                    };
+
+                    const session = castContext.getCurrentSession();
+                    if (session) {
+                        loadCurrentMedia(session);
+                    } else {
+                        castContext.requestSession().then(() => {
+                            const newSession = castContext.getCurrentSession();
+                            if (newSession) loadCurrentMedia(newSession);
+                        }).catch(err => {
+                            if (err !== 'cancel') console.warn("Cast requestSession error:", err);
+                        });
+                    }
+                    return;
+                } catch (e) {
+                    console.warn("Cast API error:", e);
+                }
             }
+
+            // 3. Fallback info
+            showToast("AirPlay / Google Cast: Use Chrome to cast to Google TV/Chromecast, or Safari on Apple TV Wi-Fi.");
         }
 
         function showCastInfo() {
-            showToast("AirPlay / Cast: Open macOS Control Center > Screen Mirroring to cast to Apple TV or smart displays.");
+            triggerCastOrAirPlay();
+        }
+
+        // --- Offline VOD Download Logic ---
+        function downloadCurrentVOD() {
+            const movie = state.currentDetailMovie;
+            if (!movie) {
+                showToast("No video selected for download.");
+                return;
+            }
+            downloadVOD(movie);
+        }
+
+        function downloadVOD(movie) {
+            if (!movie || movie.type === 'live') {
+                showToast("Live TV streams cannot be downloaded offline.");
+                return;
+            }
+            const serverClean = getServer();
+            if (!serverClean) {
+                showToast("Please configure your Xtream / IPTV server first.");
+                return;
+            }
+            const u = encodeURIComponent(config.user);
+            const p = encodeURIComponent(config.pass);
+            const ext = movie.ext || 'mp4';
+            let url = '';
+            let rawTitle = (movie.title || 'video').replace(/[/\\?%*:|"<>]/g, '_');
+            let filename = `${rawTitle}.${ext}`;
+
+            if (movie.type === 'episode') {
+                url = `${serverClean}/series/${u}/${p}/${movie.id}.${ext}`;
+            } else {
+                url = `${serverClean}/movie/${u}/${p}/${movie.id}.${ext}`;
+            }
+
+            if (window.auraNative && typeof window.auraNative.downloadFile === 'function') {
+                showToast(`Starting desktop download: ${movie.title}...`);
+                window.auraNative.downloadFile({ url, filename }).then(res => {
+                    if (res && res.success) showToast(`Downloaded to Downloads folder!`);
+                }).catch(err => {
+                    console.error("Native download error:", err);
+                    showToast("Native download initiated.");
+                });
+                return;
+            }
+
+            showToast(`Starting download: ${movie.title}...`);
+            const downloadUrl = `/stream?url=${encodeURIComponent(url)}&download=1`;
+            const a = document.createElement('a');
+            a.href = downloadUrl;
+            a.setAttribute('download', filename);
+            a.style.display = 'none';
+            document.body.appendChild(a);
+            a.click();
+            setTimeout(() => {
+                if (document.body.contains(a)) document.body.removeChild(a);
+            }, 2000);
+        }
+
+        // --- Next Episode Auto-Play Overlay Logic ---
+        function showNextEpisodeCountdown() {
+            if (state.nextEpOverlayShown || state.nextEpDismissedForCurrent) return;
+            if (!state.playingSeries || !state.currentSeriesEpisodes || state.currentSeriesEpisodes.length === 0) return;
+            if (state.currentIndex >= state.currentSeriesEpisodes.length - 1) return;
+
+            const nextEp = state.currentSeriesEpisodes[state.currentIndex + 1];
+            if (!nextEp) return;
+
+            const overlay = document.getElementById('next-episode-overlay');
+            const titleEl = document.getElementById('next-ep-overlay-title');
+            const timerEl = document.getElementById('next-ep-timer');
+            if (!overlay) return;
+
+            state.nextEpOverlayShown = true;
+            state.nextEpCountdownSec = 10;
+            if (titleEl) titleEl.textContent = `S${nextEp.season} E${nextEp.episode_num} - ${nextEp.title}`;
+            if (timerEl) timerEl.textContent = '10';
+
+            overlay.classList.remove('hidden');
+            overlay.classList.add('flex');
+
+            if (state.nextEpOverlayTimer) clearInterval(state.nextEpOverlayTimer);
+            state.nextEpOverlayTimer = setInterval(() => {
+                state.nextEpCountdownSec -= 1;
+                if (timerEl) timerEl.textContent = String(state.nextEpCountdownSec);
+                if (state.nextEpCountdownSec <= 0) {
+                    clearInterval(state.nextEpOverlayTimer);
+                    state.nextEpOverlayTimer = null;
+                    playNextEpisodeImmediately();
+                }
+            }, 1000);
+        }
+
+        function dismissNextEpisodeCountdown() {
+            state.nextEpDismissedForCurrent = true;
+            state.nextEpOverlayShown = false;
+            if (state.nextEpOverlayTimer) {
+                clearInterval(state.nextEpOverlayTimer);
+                state.nextEpOverlayTimer = null;
+            }
+            const overlay = document.getElementById('next-episode-overlay');
+            if (overlay) {
+                overlay.classList.add('hidden');
+                overlay.classList.remove('flex');
+            }
+        }
+
+        function playNextEpisodeImmediately() {
+            dismissNextEpisodeCountdown();
+            if (state.playingSeries && state.currentIndex < state.currentSeriesEpisodes.length - 1) {
+                changeChannel(1);
+            }
+        }
+
+        // --- Linear TV 2-Hour EPG Guide Timeline ---
+        function toggleLiveViewMode(mode) {
+            state.liveViewMode = mode;
+            const mainGrid = document.getElementById('main-grid');
+            const epgView = document.getElementById('epg-guide-view');
+            const gridBtn = document.getElementById('btn-live-mode-grid');
+            const epgBtn = document.getElementById('btn-live-mode-epg');
+
+            if (mode === 'epg') {
+                if (mainGrid) mainGrid.classList.add('hidden');
+                if (epgView) {
+                    epgView.classList.remove('hidden');
+                    epgView.classList.add('flex');
+                }
+                if (gridBtn) gridBtn.className = 'filter-pill px-3 py-1.5 bg-white/5 text-gray-300 hover:text-white hover:bg-white/10 text-xs font-semibold rounded-lg flex-shrink-0 transition-colors select-none';
+                if (epgBtn) epgBtn.className = 'filter-pill px-3 py-1.5 bg-primary text-white text-xs font-bold rounded-lg flex-shrink-0 shadow-md shadow-primary/20 select-none';
+                renderEPGGuideView();
+            } else {
+                if (epgView) {
+                    epgView.classList.add('hidden');
+                    epgView.classList.remove('flex');
+                }
+                if (mainGrid) mainGrid.classList.remove('hidden');
+                if (gridBtn) gridBtn.className = 'filter-pill px-3 py-1.5 bg-primary text-white text-xs font-bold rounded-lg flex-shrink-0 shadow-md shadow-primary/20 select-none';
+                if (epgBtn) epgBtn.className = 'filter-pill px-3 py-1.5 bg-white/5 text-gray-300 hover:text-white hover:bg-white/10 text-xs font-semibold rounded-lg flex-shrink-0 transition-colors select-none';
+            }
+        }
+
+        function renderEPGGuideView() {
+            const timeHeader = document.getElementById('epg-time-header');
+            const rowsContainer = document.getElementById('epg-timeline-rows');
+            if (!timeHeader || !rowsContainer) return;
+
+            const now = new Date();
+            const startSlot = new Date(now.getFullYear(), now.getMonth(), now.getDate(), now.getHours(), now.getMinutes() >= 30 ? 30 : 0, 0);
+            const slots = [];
+            for (let i = 0; i < 4; i++) {
+                const slotTime = new Date(startSlot.getTime() + i * 30 * 60 * 1000);
+                const timeStr = slotTime.toLocaleTimeString([], { hour: 'numeric', minute: '2-digit' });
+                slots.push(timeStr);
+            }
+
+            timeHeader.innerHTML = slots.map(t => `
+                <div class="flex-1 px-3 py-2 border-r border-white/5 text-gray-400 font-mono text-[11px] font-semibold text-center">${t}</div>
+            `).join('');
+
+            let channels = state.activeCategoryStreams || [];
+            if (channels.length === 0) {
+                const liveStreamsKey = Object.keys(state.streams).find(k => k.startsWith('get_live_streams'));
+                if (liveStreamsKey && state.streams[liveStreamsKey]) {
+                    channels = state.streams[liveStreamsKey];
+                }
+            }
+
+            if (!channels || channels.length === 0) {
+                rowsContainer.innerHTML = `
+                    <div class="p-12 text-center text-gray-500 flex flex-col items-center justify-center">
+                        <i class="fa-solid fa-tv text-4xl mb-3 opacity-40"></i>
+                        <p class="font-bold text-sm text-gray-300">No channels found in this category</p>
+                        <p class="text-xs text-gray-500 mt-1">Select another Live TV category to view its schedule.</p>
+                    </div>
+                `;
+                return;
+            }
+
+            const currentMinutes = now.getMinutes() % 30;
+            const progressPercent = Math.min(100, Math.round((currentMinutes / 30) * 100));
+
+            rowsContainer.innerHTML = channels.slice(0, 50).map((ch, idx) => {
+                const enc = encObj(ch);
+                const qTag = getStreamQualityTag(ch.title);
+                const qualityBadge = qTag ? `<span class="px-1 py-0.2 rounded border text-[8px] font-black tracking-wider ${qTag.class}">${qTag.label}</span>` : '';
+                
+                return `
+                    <div class="flex items-stretch hover:bg-white/[0.03] transition-colors group cursor-pointer" onclick="playStream('${enc}')">
+                        <div class="w-48 sm:w-60 px-4 py-3 border-r border-white/10 flex items-center gap-3 bg-panelbg/60 flex-shrink-0 group-hover:bg-panelbg transition-colors">
+                            <span class="text-[11px] font-mono text-gray-500 font-bold w-6 flex-shrink-0">${idx + 1}</span>
+                            <div class="w-8 h-8 rounded-lg bg-black/40 border border-white/10 flex items-center justify-center overflow-hidden flex-shrink-0">
+                                <img src="${ch.img}" data-fallback="${ch.fallbackStr}" class="w-6 h-6 object-contain" onerror="this.onerror=null;this.src=this.dataset.fallback;">
+                            </div>
+                            <div class="flex-1 min-w-0">
+                                <p class="text-xs font-bold text-gray-200 line-clamp-1 group-hover:text-white transition-colors" title="${esc(ch.title)}">${esc(ch.title)}</p>
+                                <div class="flex items-center gap-1.5 mt-0.5">
+                                    <span class="text-[9px] text-red-500 font-bold uppercase">LIVE</span>
+                                    ${qualityBadge}
+                                </div>
+                            </div>
+                        </div>
+
+                        <div class="flex-1 flex items-center overflow-hidden">
+                            <div class="w-1/2 p-2.5 border-r border-white/5 relative bg-white/[0.015] hover:bg-white/[0.05] transition-colors flex flex-col justify-center h-full">
+                                <p class="text-xs font-bold text-gray-200 line-clamp-1">${esc(ch.title)} - Live Broadcast</p>
+                                <p class="text-[10px] text-gray-400 mt-0.5">Now Playing • ${slots[0]} - ${slots[2]}</p>
+                                <div class="absolute bottom-0 left-0 w-full h-0.5 bg-white/10">
+                                    <div class="h-full bg-red-600 shadow-[0_0_8px_#dc2626]" style="width: ${progressPercent}%"></div>
+                                </div>
+                            </div>
+
+                            <div class="w-1/2 p-2.5 border-r border-white/5 bg-transparent hover:bg-white/[0.04] transition-colors flex flex-col justify-center h-full">
+                                <p class="text-xs font-semibold text-gray-400 line-clamp-1">${esc(ch.title)} - Upcoming Schedule</p>
+                                <p class="text-[10px] text-gray-500 mt-0.5">${slots[2]} - ${slots[3]}</p>
+                            </div>
+                        </div>
+                    </div>
+                `;
+            }).join('');
+        }
+
+        // --- TV Remote / Gamepad Spatial Navigation (10-Foot UI) ---
+        function initSpatialNavigation() {
+            let lastFocusTime = 0;
+
+            const isInteractive = (el) => {
+                if (!el || el.disabled || el.offsetParent === null) return false;
+                const rect = el.getBoundingClientRect();
+                return rect.width > 0 && rect.height > 0;
+            };
+
+            const getCandidates = () => {
+                const selectors = [
+                    'button',
+                    'a[href]',
+                    'input:not([type="hidden"])',
+                    'select',
+                    'textarea',
+                    '.media-card',
+                    '.drawer-item',
+                    '.season-btn',
+                    '.filter-pill',
+                    '.nav-item',
+                    '[tabindex]:not([tabindex="-1"])'
+                ];
+                const all = Array.from(document.querySelectorAll(selectors.join(',')));
+                return all.filter(isInteractive);
+            };
+
+            const navigateDirection = (dir) => {
+                const now = Date.now();
+                if (now - lastFocusTime < 80) return;
+                lastFocusTime = now;
+
+                const candidates = getCandidates();
+                if (candidates.length === 0) return;
+
+                let cur = document.activeElement;
+                if (!cur || cur === document.body || !candidates.includes(cur)) {
+                    const firstCard = candidates.find(c => c.classList.contains('media-card')) || candidates[0];
+                    if (firstCard) {
+                        firstCard.focus();
+                        firstCard.scrollIntoView({ block: 'nearest', inline: 'nearest', behavior: 'smooth' });
+                    }
+                    return;
+                }
+
+                const curRect = cur.getBoundingClientRect();
+                const curCx = curRect.left + curRect.width / 2;
+                const curCy = curRect.top + curRect.height / 2;
+
+                let bestCand = null;
+                let minScore = Infinity;
+
+                candidates.forEach(cand => {
+                    if (cand === cur) return;
+                    const r = cand.getBoundingClientRect();
+                    const cx = r.left + r.width / 2;
+                    const cy = r.top + r.height / 2;
+
+                    const dx = cx - curCx;
+                    const dy = cy - curCy;
+
+                    let valid = false;
+                    let primaryDist = 0;
+                    let secondaryDist = 0;
+
+                    if (dir === 'up') {
+                        if (dy < -4) {
+                            valid = true;
+                            primaryDist = -dy;
+                            secondaryDist = Math.abs(dx);
+                        }
+                    } else if (dir === 'down') {
+                        if (dy > 4) {
+                            valid = true;
+                            primaryDist = dy;
+                            secondaryDist = Math.abs(dx);
+                        }
+                    } else if (dir === 'left') {
+                        if (dx < -4) {
+                            valid = true;
+                            primaryDist = -dx;
+                            secondaryDist = Math.abs(dy);
+                        }
+                    } else if (dir === 'right') {
+                        if (dx > 4) {
+                            valid = true;
+                            primaryDist = dx;
+                            secondaryDist = Math.abs(dy);
+                        }
+                    }
+
+                    if (valid) {
+                        const score = primaryDist * 1.0 + secondaryDist * 2.2;
+                        if (score < minScore) {
+                            minScore = score;
+                            bestCand = cand;
+                        }
+                    }
+                });
+
+                if (bestCand) {
+                    bestCand.focus();
+                    bestCand.scrollIntoView({ block: 'nearest', inline: 'nearest', behavior: 'smooth' });
+                }
+            };
+
+            document.addEventListener('keydown', (e) => {
+                if (!e || !e.key) return;
+                const tag = e.target?.tagName;
+                if (['INPUT', 'TEXTAREA'].includes(tag)) {
+                    if (e.key === 'Escape') e.target.blur();
+                    return;
+                }
+
+                if (e.key === 'ArrowUp') {
+                    e.preventDefault();
+                    navigateDirection('up');
+                } else if (e.key === 'ArrowDown') {
+                    e.preventDefault();
+                    navigateDirection('down');
+                } else if (e.key === 'ArrowLeft') {
+                    e.preventDefault();
+                    navigateDirection('left');
+                } else if (e.key === 'ArrowRight') {
+                    e.preventDefault();
+                    navigateDirection('right');
+                } else if (e.key === 'Enter') {
+                    if (document.activeElement && document.activeElement !== document.body) {
+                        if (!['BUTTON', 'A', 'INPUT', 'SELECT'].includes(document.activeElement.tagName)) {
+                            e.preventDefault();
+                            document.activeElement.click();
+                        }
+                    }
+                }
+            });
+
+            let lastGpAction = 0;
+            const pollGamepads = () => {
+                const gamepads = navigator.getGamepads ? navigator.getGamepads() : [];
+                const gp = Array.from(gamepads).find(g => g && g.connected);
+                if (gp) {
+                    const now = Date.now();
+                    if (now - lastGpAction > 180) {
+                        const b = gp.buttons;
+                        const axes = gp.axes;
+
+                        if (b[12]?.pressed || (axes[1] && axes[1] < -0.5)) {
+                            navigateDirection('up');
+                            lastGpAction = now;
+                        } else if (b[13]?.pressed || (axes[1] && axes[1] > 0.5)) {
+                            navigateDirection('down');
+                            lastGpAction = now;
+                        } else if (b[14]?.pressed || (axes[0] && axes[0] < -0.5)) {
+                            navigateDirection('left');
+                            lastGpAction = now;
+                        } else if (b[15]?.pressed || (axes[0] && axes[0] > 0.5)) {
+                            navigateDirection('right');
+                            lastGpAction = now;
+                        } else if (b[0]?.pressed) {
+                            if (document.activeElement) document.activeElement.click();
+                            lastGpAction = now + 100;
+                        } else if (b[1]?.pressed) {
+                            window.dispatchEvent(new Event('popstate'));
+                            lastGpAction = now + 150;
+                        }
+                    }
+                }
+                requestAnimationFrame(pollGamepads);
+            };
+            requestAnimationFrame(pollGamepads);
         }
 
         function initLetterPills() {
@@ -483,6 +979,7 @@ tailwind.config = {
         document.addEventListener('DOMContentLoaded', async () => {
             initPlayerUX();
             initLetterPills();
+            initSpatialNavigation();
             
             const uname = config.user || 'Guest User';
             const sUname = document.getElementById('sidebar-username');
@@ -1490,7 +1987,9 @@ tailwind.config = {
             const cats = state.categories[tab] || [];
             if (tab === 'live') {
                 let pillsHtml = '<button onclick="toggleSidebar()" class="md:hidden filter-pill px-3 py-1.5 bg-primary/20 text-primary border border-primary/40 text-xs font-bold rounded-lg flex-shrink-0 flex items-center gap-1.5 select-none" style="touch-action: manipulation;"><i class="fa-solid fa-list text-[10px]"></i> Categories (' + cats.length + ')</button>' +
-                    '<button onclick="applyFilterPill(\'all\', this)" class="filter-pill px-3 py-1.5 bg-primary text-white text-xs font-bold rounded-lg flex-shrink-0 shadow-md shadow-primary/20 select-none">All</button>' +
+                    '<button id="btn-live-mode-grid" onclick="toggleLiveViewMode(\'grid\')" class="filter-pill px-3 py-1.5 ' + (state.liveViewMode === 'grid' ? 'bg-primary text-white shadow-md shadow-primary/20' : 'bg-white/5 text-gray-300 hover:text-white') + ' text-xs font-bold rounded-lg flex-shrink-0 flex items-center gap-1.5 select-none"><i class="fa-solid fa-table-cells text-[10px]"></i> Grid</button>' +
+                    '<button id="btn-live-mode-epg" onclick="toggleLiveViewMode(\'epg\')" class="filter-pill px-3 py-1.5 ' + (state.liveViewMode === 'epg' ? 'bg-primary text-white shadow-md shadow-primary/20' : 'bg-white/5 text-gray-300 hover:text-white') + ' text-xs font-bold rounded-lg flex-shrink-0 flex items-center gap-1.5 select-none"><i class="fa-solid fa-list-ul text-[10px]"></i> EPG Guide</button>' +
+                    '<button onclick="applyFilterPill(\'all\', this)" class="filter-pill px-3 py-1.5 bg-white/5 text-gray-300 hover:text-white text-xs font-semibold rounded-lg flex-shrink-0 transition-colors select-none">All</button>' +
                     '<button onclick="applyFilterPill(\'4k\', this)" class="filter-pill px-3 py-1.5 bg-white/5 text-gray-300 hover:text-white hover:bg-white/10 text-xs font-semibold rounded-lg flex-shrink-0 transition-colors select-none">4K / UHD</button>' +
                     '<button onclick="applyFilterPill(\'fhd\', this)" class="filter-pill px-3 py-1.5 bg-white/5 text-gray-300 hover:text-white hover:bg-white/10 text-xs font-semibold rounded-lg flex-shrink-0 transition-colors select-none">FHD</button>';
                 cats.slice(0, 10).forEach(c => {
@@ -1519,7 +2018,18 @@ tailwind.config = {
             }
 
             renderSidebarCategories();
-            renderGridContent('all');
+            if (tab === 'live' && state.liveViewMode === 'epg') {
+                toggleLiveViewMode('epg');
+            } else {
+                const epgView = document.getElementById('epg-guide-view');
+                if (epgView) {
+                    epgView.classList.add('hidden');
+                    epgView.classList.remove('flex');
+                }
+                const mg = document.getElementById('main-grid');
+                if (mg) mg.classList.remove('hidden');
+                renderGridContent('all');
+            }
         }
 
         function renderFavoritesView() {
@@ -1837,7 +2347,9 @@ tailwind.config = {
             const mStr = encObj(movie);
             const badgeHtml = (!isHistory && !actualLive && idx < 10) ? `<div class="absolute -top-2 -left-2 w-8 h-8 rounded-full bg-primary text-white flex items-center justify-center font-black text-xs shadow-lg shadow-primary/40 z-30 border-2 border-[#141414]">#${idx + 1}</div>` : '';
             const aspect = actualLive ? 'aspect-video' : 'aspect-[2/3]';
-            const progressHtml = isHistory ? `<div class="absolute bottom-0 left-0 w-full h-1 bg-gray-800 z-30"><div class="h-full bg-primary shadow-[0_0_10px_#e50914]" style="width: ${movie.progress || 10}%"></div></div>` : '';
+            const savedProg = !actualLive && movie.id ? state.playbackProgress[String(movie.id)] : null;
+            const progressVal = savedProg ? savedProg.percentage : (isHistory ? (movie.progress || 10) : 0);
+            const progressHtml = (!actualLive && progressVal > 2) ? `<div class="absolute bottom-0 left-0 w-full h-1 bg-gray-800 z-30"><div class="h-full bg-primary shadow-[0_0_10px_#e50914]" style="width: ${progressVal}%"></div></div>` : '';
             const favActive = isFavorite(movie.id);
             const qTag = getStreamQualityTag(movie.title);
             const qualityBadge = qTag ? `<span class="px-1 py-0.2 rounded border text-[8px] font-black tracking-wider ${qTag.class}">${qTag.label}</span>` : '';
@@ -1855,7 +2367,7 @@ tailwind.config = {
             const clickAction = actualLive ? `playStream('${mStr}')` : `openDetailView('${mStr}')`;
 
             return `
-                <div class="media-card relative group cursor-pointer flex flex-col gap-2 w-full" ${isHistory ? `data-history-id="${movie.id}"` : ''} onclick="${clickAction}">
+                <div class="media-card relative group cursor-pointer flex flex-col gap-2 w-full focus:outline-none focus:ring-2 focus:ring-primary focus:ring-offset-2 focus:ring-offset-mainbg rounded-xl" tabindex="0" ${isHistory ? `data-history-id="${movie.id}"` : ''} onclick="${clickAction}">
                     <div class="${aspect} rounded-xl overflow-hidden relative shadow-lg bg-panelbg border border-white/5">
                         <img src="${movie.img}" data-fallback="${movie.fallbackStr}" loading="lazy" class="${actualLive ? 'w-3/4 h-3/4 object-contain absolute top-1/2 left-1/2 -translate-x-1/2 -translate-y-1/2' : 'w-full h-full object-cover'}" onerror="this.onerror=null;this.src=this.dataset.fallback;">
                         
@@ -2061,6 +2573,31 @@ tailwind.config = {
                 document.getElementById('detail-play-text').textContent = movie.type === 'live' ? "Watch Live" : "Watch Now";
                 playBtn.disabled = false;
                 playBtn.onclick = () => { closeDetailView(); playStream(movie); };
+            }
+
+            // Resume Playback and Offline Download controls
+            const resumeBtn = document.getElementById('detail-resume-btn');
+            const resumeText = document.getElementById('detail-resume-text');
+            const downloadBtn = document.getElementById('detail-download-btn');
+            const savedProg = state.playbackProgress[String(movie.id)];
+
+            if (movie.type === 'live') {
+                if (resumeBtn) resumeBtn.classList.add('hidden');
+                if (downloadBtn) downloadBtn.classList.add('hidden');
+            } else {
+                if (downloadBtn) downloadBtn.classList.remove('hidden');
+                if (savedProg && savedProg.currentTime > 10 && savedProg.percentage < 95) {
+                    if (resumeBtn && resumeText) {
+                        resumeBtn.classList.remove('hidden');
+                        resumeText.textContent = `Resume (${formatTime(savedProg.currentTime)})`;
+                        resumeBtn.onclick = () => {
+                            closeDetailView();
+                            playStream(movie, movie.type === 'series', 0, savedProg.currentTime);
+                        };
+                    }
+                } else if (resumeBtn) {
+                    resumeBtn.classList.add('hidden');
+                }
             }
         }
 
@@ -2460,7 +2997,7 @@ tailwind.config = {
             }
         }
 
-        async function playStream(movie, isSeriesTrigger = false, epIndex = 0) {
+        async function playStream(movie, isSeriesTrigger = false, epIndex = 0, resumeTime = 0) {
             if (typeof movie === 'string') {
                 try {
                     movie = JSON.parse(decodeURIComponent(movie));
@@ -2471,6 +3008,10 @@ tailwind.config = {
             }
             if (!movie) return;
             currentActiveMovie = movie;
+            state.requestedResumeTime = resumeTime || 0;
+            state.nextEpOverlayShown = false;
+            state.nextEpDismissedForCurrent = false;
+            if (typeof dismissNextEpisodeCountdown === 'function') dismissNextEpisodeCountdown();
 
             // Manage History Array (only track movies/episodes/vod - live channels are non-resumable linear streams)
             if (movie.id && movie.type !== 'live' && movie.stream_type !== 'live' && state.currentTab !== 'live') {
@@ -2708,6 +3249,9 @@ tailwind.config = {
 
         function playEpisodeLogic(index) {
             state.currentIndex = index;
+            state.nextEpOverlayShown = false;
+            state.nextEpDismissedForCurrent = false;
+            if (typeof dismissNextEpisodeCountdown === 'function') dismissNextEpisodeCountdown();
             const ep = state.currentSeriesEpisodes[index];
             if (!ep) return;
             
@@ -3295,6 +3839,12 @@ tailwind.config = {
                 if (state.playbackSessionId !== currentSession) return;
                 clearWatchdog();
                 showPlayerSpinner(false);
+                if (state.requestedResumeTime && state.requestedResumeTime > 0) {
+                    try {
+                        video.currentTime = state.requestedResumeTime;
+                    } catch (_) {}
+                    state.requestedResumeTime = 0;
+                }
                 // Do not auto-dismiss error dialog if in persistent error state
                 if (!state.hasPlaybackError) {
                     hidePlayerError();
@@ -3316,6 +3866,7 @@ tailwind.config = {
             video.onended = () => {
                 if (state.playbackSessionId !== currentSession) return;
                 clearWatchdog();
+                if (typeof dismissNextEpisodeCountdown === 'function') dismissNextEpisodeCountdown();
                 if (state.playingSeries && state.currentIndex < state.currentSeriesEpisodes.length - 1) {
                     changeChannel(1);
                 }
@@ -3421,6 +3972,7 @@ tailwind.config = {
             // Clear the active movie so isStreamLive() returns false immediately
             currentActiveMovie = null;
             state.currentActiveMovie = null;
+            if (typeof dismissNextEpisodeCountdown === 'function') dismissNextEpisodeCountdown();
             const video = document.getElementById('video-player');
             if (video) {
                 video.onwaiting = null;
@@ -3614,6 +4166,12 @@ tailwind.config = {
             video.onloadedmetadata = () => {
                 updateScrubberMode();
                 updateQualityBadgeUI();
+                if (state.requestedResumeTime && state.requestedResumeTime > 0) {
+                    try {
+                        video.currentTime = state.requestedResumeTime;
+                    } catch (_) {}
+                    state.requestedResumeTime = 0;
+                }
             };
 
             video.ondurationchange = () => {
@@ -3625,8 +4183,31 @@ tailwind.config = {
                 updatePlayerOrientationLayout();
             };
 
+            let lastProgressSaveTime = 0;
             video.ontimeupdate = () => {
                 updateScrubberMode();
+
+                const curMovie = state.currentActiveMovie;
+                const isLive = curMovie?.type === 'live' || curMovie?.stream_type === 'live' || state.currentTab === 'live';
+
+                // 1. Playback Progress Tracking
+                if (!isLive && video.duration && !isNaN(video.duration) && video.duration > 0 && curMovie?.id) {
+                    const now = Date.now();
+                    if (now - lastProgressSaveTime > 2000 && video.currentTime > 5) {
+                        lastProgressSaveTime = now;
+                        savePlaybackProgress(curMovie.id, video.currentTime, video.duration);
+                    }
+                }
+
+                // 2. Series Next Episode Auto-Play Countdown (< 25s remaining)
+                if (state.playingSeries && video.duration && !isNaN(video.duration) && video.duration > 0) {
+                    const remaining = video.duration - video.currentTime;
+                    if (remaining <= 25 && remaining > 0 && state.currentIndex < state.currentSeriesEpisodes.length - 1) {
+                        if (!state.nextEpOverlayShown && !state.nextEpDismissedForCurrent) {
+                            showNextEpisodeCountdown();
+                        }
+                    }
+                }
             };
 
             seekBar.oninput = (e) => { 

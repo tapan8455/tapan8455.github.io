@@ -27,9 +27,10 @@
     <link href="https://fonts.googleapis.com/css2?family=Inter:wght@300;400;500;600;700;800;900&display=swap" rel="stylesheet">
     <link rel="stylesheet" href="https://cdnjs.cloudflare.com/ajax/libs/font-awesome/6.4.0/css/all.min.css">
     
-    <!-- Video Player Libraries -->
+    <!-- Video Player Libraries & Google Cast SDK -->
     <script src="https://cdn.jsdelivr.net/npm/hls.js@1.5.15"></script>
     <script src="https://cdn.jsdelivr.net/npm/mpegts.js@1.7.3"></script>
+    <script src="https://www.gstatic.com/cv/js/sender/v1/cast_sender.js?loadCastFramework=1"></script>
 
     <!-- Tailwind CSS -->
     <script src="https://cdn.tailwindcss.com"></script>
@@ -115,7 +116,7 @@
             <button onclick="toggleShortcutsModal()" id="btn-shortcuts" aria-label="Keyboard Shortcuts" class="w-full flex items-center gap-3 px-3 py-2 rounded-lg text-sm font-semibold text-gray-400 hover:text-white hover:bg-white/5 transition-colors" style="touch-action: manipulation;">
                 <i class="fa-solid fa-keyboard w-5 text-center text-yellow-400 pointer-events-none" aria-hidden="true"></i> <span class="pointer-events-none">Shortcuts (?)</span>
             </button>
-            <button onclick="showCastInfo()" id="btn-cast-sidebar" aria-label="Cast / AirPlay" class="w-full flex items-center gap-3 px-3 py-2 rounded-lg text-sm font-semibold text-gray-400 hover:text-white hover:bg-white/5 transition-colors" style="touch-action: manipulation;">
+            <button onclick="triggerCastOrAirPlay()" id="btn-cast-sidebar" aria-label="Cast / AirPlay" class="w-full flex items-center gap-3 px-3 py-2 rounded-lg text-sm font-semibold text-gray-400 hover:text-white hover:bg-white/5 transition-colors" style="touch-action: manipulation;">
                 <i class="fa-brands fa-chromecast w-5 text-center text-blue-400 pointer-events-none" aria-hidden="true"></i> <span class="pointer-events-none">Cast / AirPlay</span>
             </button>
             <button onclick="openProfileModal()" id="btn-settings-sidebar" aria-label="Settings and Sources" class="w-full flex items-center gap-3 px-3 py-2 rounded-lg text-sm font-semibold text-gray-400 hover:text-white hover:bg-white/5 transition-colors" style="touch-action: manipulation;">
@@ -202,6 +203,22 @@
             </div>
         </div>
 
+        <!-- Linear TV 2-Hour EPG Guide Timeline View -->
+        <div id="epg-guide-view" class="flex-1 flex-col overflow-hidden hidden bg-mainbg w-full" role="region" aria-label="Live TV Guide">
+            <div class="h-12 border-b border-white/10 bg-[#161618] flex items-center flex-shrink-0 z-20 sticky top-0">
+                <div class="w-48 sm:w-60 px-4 text-xs font-bold uppercase tracking-wider text-gray-400 border-r border-white/10 flex items-center justify-between flex-shrink-0">
+                    <span>Channel</span>
+                    <button onclick="toggleLiveViewMode('grid')" class="text-[10px] text-primary hover:underline font-bold flex items-center gap-1"><i class="fa-solid fa-table-cells" aria-hidden="true"></i> Grid</button>
+                </div>
+                <div id="epg-time-slots" class="flex-1 flex items-center overflow-x-hidden text-xs font-bold text-gray-300 font-mono">
+                    <!-- Injected via JS -->
+                </div>
+            </div>
+            <div id="epg-rows-container" class="flex-1 overflow-y-auto custom-scroll divide-y divide-white/5">
+                <!-- Channel EPG Rows injected via JS -->
+            </div>
+        </div>
+
         <!-- Advanced Hero Detail Overlay -->
         <div id="detail-overlay" class="absolute inset-0 bg-mainbg z-40 hidden flex-col overflow-y-auto custom-scroll transform translate-y-full" style="transition: transform 0.5s cubic-bezier(0.2, 0.8, 0.2, 1);" role="dialog" aria-modal="true" aria-labelledby="detail-title">
             
@@ -212,13 +229,13 @@
                 </button>
                 <div class="flex gap-3 pointer-events-auto">
                     <button id="detail-fav-btn" aria-label="Toggle favorite" class="w-11 h-11 rounded-full bg-black/60 backdrop-blur-md border border-white/20 text-white flex items-center justify-center hover:text-primary transition-all duration-200 shadow-xl hover:scale-105 active:scale-95" title="Toggle Favorite"><i class="fa-regular fa-heart text-lg" aria-hidden="true"></i></button>
-                    <button onclick="showCastInfo()" aria-label="Cast to TV" class="w-11 h-11 rounded-full bg-black/60 backdrop-blur-md border border-white/20 text-white flex items-center justify-center hover:text-primary transition-all duration-200 shadow-xl hover:scale-105 active:scale-95" title="Cast"><i class="fa-brands fa-chromecast text-lg" aria-hidden="true"></i></button>
+                    <button id="detail-cast-btn" onclick="triggerCastOrAirPlay()" aria-label="Cast to TV" class="w-11 h-11 rounded-full bg-black/60 backdrop-blur-md border border-white/20 text-white flex items-center justify-center hover:text-primary transition-all duration-200 shadow-xl hover:scale-105 active:scale-95" title="Cast / AirPlay"><i class="fa-brands fa-chromecast text-lg" aria-hidden="true"></i></button>
                 </div>
             </div>
 
             <!-- Hero Backdrop -->
             <div class="relative w-full h-[60vh] md:h-[70vh] flex-shrink-0 bg-black">
-                <img id="detail-backdrop" src="" class="w-full h-full object-cover object-top opacity-60" alt="">
+                <img id="detail-backdrop" src="" referrerpolicy="no-referrer" class="w-full h-full object-cover object-top opacity-60" alt="">
                 <div class="absolute inset-0 hero-vignette"></div>
                 <div class="absolute inset-0 hero-vignette-side hidden md:block"></div>
                 
@@ -233,9 +250,15 @@
                     
                     <h2 id="detail-title" class="text-4xl md:text-6xl lg:text-7xl font-black text-white tracking-tighter mb-6 drop-shadow-2xl leading-tight"></h2>
                     
-                    <div class="flex flex-wrap gap-4 mb-6">
-                        <button id="detail-play-btn" aria-label="Watch video" class="bg-primary hover:bg-red-700 text-white px-8 py-3 rounded-md font-bold text-base shadow-[0_0_20px_rgba(229,9,20,0.4)] hover:-translate-y-1 transition-all flex items-center gap-3">
+                    <div class="flex flex-wrap items-center gap-3 mb-6">
+                        <button id="detail-resume-btn" onclick="resumeCurrentMovie()" class="hidden bg-primary hover:bg-red-700 text-white px-7 py-3 rounded-md font-bold text-sm shadow-[0_0_20px_rgba(229,9,20,0.5)] hover:-translate-y-1 transition-all flex items-center gap-2.5">
+                            <i class="fa-solid fa-play" aria-hidden="true"></i> <span id="detail-resume-text">Resume</span>
+                        </button>
+                        <button id="detail-play-btn" aria-label="Watch video" class="bg-white/15 hover:bg-white/25 border border-white/20 text-white px-7 py-3 rounded-md font-bold text-sm hover:-translate-y-1 transition-all flex items-center gap-2.5">
                             <i class="fa-solid fa-play" aria-hidden="true"></i> <span id="detail-play-text">Watch</span>
+                        </button>
+                        <button id="detail-download-btn" onclick="downloadCurrentVOD()" aria-label="Download for offline viewing" class="bg-white/5 hover:bg-white/15 border border-white/10 text-white px-5 py-3 rounded-md font-semibold text-xs hover:-translate-y-1 transition-all flex items-center gap-2">
+                            <i class="fa-solid fa-cloud-arrow-down text-primary" aria-hidden="true"></i> <span>Download</span>
                         </button>
                     </div>
 
@@ -293,7 +316,21 @@
 
     <!-- Fullscreen Player Modal -->
     <div id="player-modal" class="fixed inset-0 z-[500] hidden bg-black flex flex-col items-center justify-center opacity-0 transition-opacity duration-300">
-        <video id="video-player" class="w-full h-full max-h-screen object-contain bg-black cursor-pointer" playsinline webkit-playsinline></video>
+        <video id="video-player" class="w-full h-full max-h-screen object-contain bg-black cursor-pointer" playsinline webkit-playsinline x-webkit-airplay="allow" airplay="allow"></video>
+        
+        <!-- Next Episode Binge Countdown Overlay -->
+        <div id="next-episode-overlay" class="absolute bottom-24 right-4 sm:right-8 bg-black/95 backdrop-blur-2xl border border-white/20 p-4 sm:p-5 rounded-2xl shadow-2xl z-50 hidden flex-col max-w-sm transition-all duration-300 animate-fade-in">
+            <div class="flex items-center justify-between gap-4 mb-2">
+                <span class="text-[10px] uppercase font-black tracking-widest text-primary flex items-center gap-1.5"><i class="fa-solid fa-forward-step" aria-hidden="true"></i> Up Next</span>
+                <button onclick="dismissNextEpisodeCountdown()" aria-label="Dismiss next episode countdown" class="text-gray-400 hover:text-white text-xs w-6 h-6 flex items-center justify-center rounded-full hover:bg-white/10"><i class="fa-solid fa-xmark"></i></button>
+            </div>
+            <h4 id="next-ep-title" class="text-white font-bold text-xs sm:text-sm truncate mb-1"></h4>
+            <p class="text-[11px] text-gray-400 mb-3 font-mono">Playing next episode in <span id="next-ep-timer-sec" class="text-white font-bold text-xs">10</span>s</p>
+            <div class="flex gap-2">
+                <button onclick="playNextEpisodeImmediately()" class="flex-1 bg-primary hover:bg-red-700 text-white font-bold py-2 px-3 rounded-lg text-xs transition-colors flex items-center justify-center gap-1.5 shadow active:scale-95"><i class="fa-solid fa-play text-[9px]"></i> Play Now</button>
+                <button onclick="dismissNextEpisodeCountdown()" class="bg-white/10 hover:bg-white/20 text-gray-300 hover:text-white font-bold py-2 px-3 rounded-lg text-xs transition-colors active:scale-95">Cancel</button>
+            </div>
+        </div>
         
         <!-- Touch Double-Tap Seek Ripples (Mobile & Tablet) -->
         <div id="seek-ripple-left" class="seek-ripple left-6 sm:left-20">
@@ -488,7 +525,7 @@
                         <button id="pip-btn" onclick="togglePiP()" aria-label="Picture in picture (P)" class="text-gray-300 hover:text-white transition-colors tooltip p-2 hidden sm:block active:scale-95" title="Picture in Picture (P)">
                             <i class="fa-solid fa-clone text-base sm:text-lg" aria-hidden="true"></i>
                         </button>
-                        <button id="btn-cast-player" onclick="showCastInfo()" aria-label="Cast to TV" class="text-gray-300 hover:text-white transition-colors tooltip p-2 hidden sm:block active:scale-95" title="Cast to TV">
+                        <button id="btn-cast-player" onclick="triggerCastOrAirPlay()" aria-label="Cast to TV" class="text-gray-300 hover:text-white transition-colors tooltip p-2 hidden sm:block active:scale-95" title="Cast to TV">
                             <i class="fa-brands fa-chromecast text-base sm:text-lg" aria-hidden="true"></i>
                         </button>
                         <button id="fullscreen-btn" aria-label="Toggle fullscreen (F)" class="text-gray-300 hover:text-white transition-colors tooltip p-2 active:scale-95" title="Fullscreen (F)">

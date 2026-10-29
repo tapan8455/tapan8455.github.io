@@ -46,6 +46,10 @@ tailwind.config = {
                 mediaProxy: (url) => {
                     if (!url) return '';
                     if (url.startsWith('/stream?url=') || url.startsWith('aura://stream?url=')) return url;
+                    // Direct HTTPS streams don't need proxying when on HTTPS and avoid serverless timeouts
+                    if (window.location.protocol === 'https:' && url.startsWith('https://')) return url;
+                    // On local development HTTP, direct streaming works natively
+                    if (window.location.protocol === 'http:' && !window.location.hostname.includes('vercel')) return url;
                     return `/stream?url=${encodeURIComponent(url)}`;
                 },
                 toggleFullScreen: () => {
@@ -2134,6 +2138,30 @@ tailwind.config = {
             showToast(includeCreds ? 'Full Stream URL copied (contains credentials)' : 'Stream URL copied (password redacted)');
         }
 
+        function openInVlcDirect() {
+            let raw = state.activeStreamUrl;
+            if (!raw && currentActiveMovie) {
+                const serverClean = getServer();
+                raw = currentActiveMovie.type === 'live'
+                    ? `${serverClean}/${config.user}/${config.pass}/${currentActiveMovie.id}`
+                    : `${serverClean}/movie/${config.user}/${config.pass}/${currentActiveMovie.id}.${currentActiveMovie.ext || 'mp4'}`;
+            }
+            if (!raw) {
+                showToast('No active stream URL');
+                return;
+            }
+            if (raw.startsWith('/stream?url=')) {
+                raw = decodeURIComponent(raw.replace('/stream?url=', ''));
+            } else if (raw.startsWith('aura://stream?url=')) {
+                raw = decodeURIComponent(raw.replace('aura://stream?url=', ''));
+            }
+            const vlcUrl = raw.startsWith('http') ? `vlc://${raw}` : raw;
+            try {
+                window.location.href = vlcUrl;
+            } catch (_) {}
+            showToast('Opening in VLC Player (or click "VLC M3U" to download)...');
+        }
+
         function retryCurrentStream() {
             if (currentActiveMovie) {
                 hidePlayerError();
@@ -2977,25 +3005,31 @@ tailwind.config = {
                 urls.push(movie.streamUrl);
             }
 
-            if (movie.type === 'episode') {
-                if (serverClean) {
-                    urls.push(`${serverClean}/series/${u}/${p}/${movie.id}.${movie.ext}`);
-                    urls.push(`${serverClean}/series/${u}/${p}/${movie.id}.mp4`);
-                    urls.push(`${serverClean}/series/${u}/${p}/${movie.id}.mkv`);
-                }
-            } else if (isLive) {
-                if (serverClean) {
-                    urls.push(`${serverClean}/live/${u}/${p}/${movie.id}.m3u8`);
-                    urls.push(`${serverClean}/${u}/${p}/${movie.id}.m3u8`);
-                    urls.push(`${serverClean}/live/${u}/${p}/${movie.id}.ts`);
-                    urls.push(`${serverClean}/${u}/${p}/${movie.id}.ts`);
-                    urls.push(`${serverClean}/${u}/${p}/${movie.id}`);
-                }
-            } else {
-                if (serverClean) {
-                    urls.push(`${serverClean}/movie/${u}/${p}/${movie.id}.${movie.ext}`);
-                    urls.push(`${serverClean}/movie/${u}/${p}/${movie.id}.mp4`);
-                    urls.push(`${serverClean}/movie/${u}/${p}/${movie.id}.mkv`);
+            if (serverClean) {
+                const sHttp = serverClean.startsWith('http') ? serverClean : `http://${serverClean}`;
+                const sHttps = sHttp.replace(/^http:\/\//i, 'https://');
+                
+                // Prioritize HTTPS candidates when page is on HTTPS to avoid mixed content
+                const isHttpsPage = window.location.protocol === 'https:';
+                const serverList = isHttpsPage ? [sHttps, sHttp] : [sHttp, sHttps];
+                const uniqueServers = [...new Set(serverList)];
+
+                for (const srv of uniqueServers) {
+                    if (movie.type === 'episode') {
+                        urls.push(`${srv}/series/${u}/${p}/${movie.id}.${movie.ext || 'mp4'}`);
+                        urls.push(`${srv}/series/${u}/${p}/${movie.id}.mp4`);
+                        urls.push(`${srv}/series/${u}/${p}/${movie.id}.mkv`);
+                    } else if (isLive) {
+                        urls.push(`${srv}/live/${u}/${p}/${movie.id}.m3u8`);
+                        urls.push(`${srv}/${u}/${p}/${movie.id}.m3u8`);
+                        urls.push(`${srv}/live/${u}/${p}/${movie.id}.ts`);
+                        urls.push(`${srv}/${u}/${p}/${movie.id}.ts`);
+                        urls.push(`${srv}/${u}/${p}/${movie.id}`);
+                    } else {
+                        urls.push(`${srv}/movie/${u}/${p}/${movie.id}.${movie.ext || 'mp4'}`);
+                        urls.push(`${srv}/movie/${u}/${p}/${movie.id}.mp4`);
+                        urls.push(`${srv}/movie/${u}/${p}/${movie.id}.mkv`);
+                    }
                 }
             }
 
@@ -3282,25 +3316,43 @@ tailwind.config = {
 
             const serverClean = getServer();
             let streamUrl = failedUrl || (movie.type === 'live' ? `${serverClean}/${config.user}/${config.pass}/${movie.id}` : `${serverClean}/movie/${config.user}/${config.pass}/${movie.id}.${movie.ext}`);
+            if (streamUrl && streamUrl.startsWith('/stream?url=')) {
+                streamUrl = decodeURIComponent(streamUrl.replace('/stream?url=', ''));
+            }
             state.activeStreamUrl = streamUrl;
+
+            // Inspect video element error code
+            const video = document.getElementById('video-player');
+            const mediaErrCode = video?.error?.code;
 
             // Classify specific failure reason
             let title = 'Playback Issue';
             let desc = 'Stream codec or connection temporarily unresponsive.';
-            const isMixed = window.location.protocol === 'https:' && (streamUrl.startsWith('http://') || failedUrl?.startsWith('http://')) && !window.location.hostname.includes('localhost');
 
-            if (isMixed) {
-                title = 'Mixed Content Blocked';
-                desc = 'Browser on HTTPS blocked unencrypted HTTP stream. Stream through the AURA proxy or connect via HTTPS.';
+            const isMkvOrUnsupportedCodec = (movie?.ext === 'mkv') || 
+                                           (streamUrl && streamUrl.toLowerCase().includes('.mkv')) ||
+                                           (mediaErrCode === 4);
+
+            const isDirectMixed = window.location.protocol === 'https:' && 
+                                 (streamUrl.startsWith('http://') || failedUrl?.startsWith('http://')) && 
+                                 !window.location.hostname.includes('localhost') &&
+                                 !isMkvOrUnsupportedCodec;
+
+            if (isMkvOrUnsupportedCodec) {
+                title = 'Format / Codec Unsupported (MKV)';
+                desc = 'Web browsers cannot decode MKV containers or AC3/DTS audio natively. Click "Open in VLC" below to watch directly.';
             } else if (errorReason === 'cors') {
                 title = 'CORS Blocked';
-                desc = 'IPTV provider lacks CORS headers. Stream through the AURA proxy to bypass browser restriction.';
+                desc = 'IPTV provider lacks browser CORS headers. Click "Open in VLC" to stream directly in your media player.';
             } else if (errorReason === 'offline' || errorReason === '404') {
                 title = 'Stream Offline (404)';
                 desc = 'This channel or video is currently unavailable on provider servers.';
             } else if (errorReason === 'auth' || errorReason === '401' || errorReason === '403') {
                 title = 'Authentication Error';
                 desc = 'Account subscription may have expired or max connections reached.';
+            } else if (isDirectMixed) {
+                title = 'Unencrypted HTTP Stream';
+                desc = 'Stream served over unencrypted HTTP. Click "Open in VLC" to watch directly, or connect via HTTPS.';
             }
 
             const titleEl = document.getElementById('player-error-title');

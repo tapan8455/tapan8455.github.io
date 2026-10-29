@@ -364,6 +364,13 @@ const server = http.createServer(async (req, res) => {
     return;
   }
 
+  // Favicon fallback
+  if (pathname === '/favicon.ico') {
+    res.writeHead(204);
+    res.end();
+    return;
+  }
+
   // Static File Serving
   let filePath = pathname === '/' ? '/index.html' : pathname;
   let safePath = path.normalize(filePath).replace(/^(\.\.[\/\\])+/, '').replace(/^[/\\]+/, '');
@@ -403,4 +410,15 @@ if (require.main === module) {
   });
 }
 
-module.exports = { server, rewriteM3U8, requestJSON, MIME_TYPES };
+// Vercel Serverless Function handler
+function handler(req, res) {
+  server.emit('request', req, res);
+}
+
+handler.server = server;
+handler.rewriteM3U8 = rewriteM3U8;
+handler.requestJSON = requestJSON;
+handler.MIME_TYPES = MIME_TYPES;
+handler.default = handler;
+
+module.exports = handler;

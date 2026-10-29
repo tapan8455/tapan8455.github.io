@@ -1519,9 +1519,11 @@ tailwind.config = {
             const sInput = document.getElementById('prof-server');
             const uInput = document.getElementById('prof-user');
             const pInput = document.getElementById('prof-pass');
+            const proxyInput = document.getElementById('prof-proxy');
             if (sInput) sInput.value = config.server || '';
             if (uInput) uInput.value = config.user || '';
             if (pInput) pInput.value = config.pass || '';
+            if (proxyInput) proxyInput.value = localStorage.getItem('aura_custom_proxy') || '';
 
             const statusEl = document.getElementById('conn-test-status');
             if (statusEl) {
@@ -1607,21 +1609,54 @@ tailwind.config = {
                     showToast('Connection verified successfully!');
                 } else {
                     let errReason = res.error || 'Authentication rejected by provider';
-                    if (errReason.includes('401') || errReason.includes('403')) {
-                        errReason = '401/403: Invalid username or password, or expired subscription';
-                    } else if (errReason.includes('HTML')) {
-                        errReason = 'Server returned HTML instead of Xtream JSON. Check domain & port.';
+                    const isCorsOrMixed = errReason.toLowerCase().includes('failed to fetch') || errReason.includes('CORS') || isMixed;
+                    if (isCorsOrMixed) {
+                        statusEl.className = 'conn-status fail block text-left p-3';
+                        statusEl.innerHTML = `
+                            <div class="flex items-center gap-2 font-bold mb-1 text-red-400">
+                                <i class="fa-solid fa-shield-halved text-base"></i> Browser Blocked Connection (Mixed Content / CORS)
+                            </div>
+                            <p class="text-[11px] text-gray-300 mb-2 leading-relaxed">
+                                GitHub Pages runs on HTTPS, so your browser blocks unencrypted HTTP requests to your provider.
+                            </p>
+                            <div class="bg-black/50 p-2.5 rounded-lg border border-white/10 space-y-1.5 text-[11px]">
+                                <div class="font-bold text-white mb-0.5">How to fix in 10 seconds:</div>
+                                <div class="text-gray-300"><b>Option 1 (Instant):</b> Click the site icon left of the URL in Chrome/Edge &rarr; <b>Site settings</b> &rarr; set <b>Insecure content</b> to <b>"Allow"</b> &rarr; reload page.</div>
+                                <div class="text-gray-300"><b>Option 2:</b> Change <code>http://</code> to <code>https://</code> in the Server URL if your provider supports it.</div>
+                                <div class="text-gray-300"><b>Option 3:</b> Use the free <b>AURA Desktop App</b> for macOS/Windows with zero browser limits.</div>
+                            </div>`;
+                    } else {
+                        if (errReason.includes('401') || errReason.includes('403')) {
+                            errReason = '401/403: Invalid username or password, or expired subscription';
+                        } else if (errReason.includes('HTML')) {
+                            errReason = 'Server returned HTML instead of Xtream JSON. Check domain & port.';
+                        }
+                        statusEl.className = 'conn-status fail block text-center py-2';
+                        statusEl.innerHTML = `<i class="fa-solid fa-circle-xmark"></i> ${esc(errReason)}`;
                     }
-                    statusEl.className = 'conn-status fail block text-center py-2';
-                    statusEl.innerHTML = `<i class="fa-solid fa-circle-xmark"></i> ${esc(errReason)}`;
                 }
             } catch (err) {
                 let errMsg = err.message || 'Connection failed';
-                if (isMixed && errMsg.toLowerCase().includes('failed to fetch')) {
-                    errMsg = 'Mixed content / CORS blocked: Browser on HTTPS blocked HTTP request. Enable proxy or try https://';
+                const isCorsOrMixed = errMsg.toLowerCase().includes('failed to fetch') || isMixed;
+                if (isCorsOrMixed) {
+                    statusEl.className = 'conn-status fail block text-left p-3';
+                    statusEl.innerHTML = `
+                        <div class="flex items-center gap-2 font-bold mb-1 text-red-400">
+                            <i class="fa-solid fa-shield-halved text-base"></i> Browser Blocked Connection (Mixed Content / CORS)
+                        </div>
+                        <p class="text-[11px] text-gray-300 mb-2 leading-relaxed">
+                            GitHub Pages runs on HTTPS, so your browser blocks unencrypted HTTP requests to your provider.
+                        </p>
+                        <div class="bg-black/50 p-2.5 rounded-lg border border-white/10 space-y-1.5 text-[11px]">
+                            <div class="font-bold text-white mb-0.5">How to fix in 10 seconds:</div>
+                            <div class="text-gray-300"><b>Option 1 (Instant):</b> Click the site icon left of the URL in Chrome/Edge &rarr; <b>Site settings</b> &rarr; set <b>Insecure content</b> to <b>"Allow"</b> &rarr; reload page.</div>
+                            <div class="text-gray-300"><b>Option 2:</b> Change <code>http://</code> to <code>https://</code> in the Server URL if your provider supports it.</div>
+                            <div class="text-gray-300"><b>Option 3:</b> Use the free <b>AURA Desktop App</b> for macOS/Windows with zero browser limits.</div>
+                        </div>`;
+                } else {
+                    statusEl.className = 'conn-status fail block text-center py-2';
+                    statusEl.innerHTML = `<i class="fa-solid fa-circle-xmark"></i> ${esc(errMsg)}`;
                 }
-                statusEl.className = 'conn-status fail block text-center py-2';
-                statusEl.innerHTML = `<i class="fa-solid fa-circle-xmark"></i> ${esc(errMsg)}`;
             }
         }
 
@@ -1629,6 +1664,15 @@ tailwind.config = {
             let s = document.getElementById('prof-server').value.trim().replace(/\/+$/, '');
             const u = document.getElementById('prof-user').value.trim();
             const p = document.getElementById('prof-pass').value.trim();
+            const proxyInput = document.getElementById('prof-proxy');
+            if (proxyInput) {
+                const proxyVal = proxyInput.value.trim();
+                if (proxyVal) {
+                    localStorage.setItem('aura_custom_proxy', proxyVal);
+                } else {
+                    localStorage.removeItem('aura_custom_proxy');
+                }
+            }
 
             if (!s || !u || !p) {
                 showToast('Please enter Server URL, Username, and Password');

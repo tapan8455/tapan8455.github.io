@@ -45,11 +45,9 @@ tailwind.config = {
                 },
                 mediaProxy: (url) => {
                     if (!url) return '';
-                    if (url.startsWith('/stream?url=') || url.startsWith('aura://stream?url=')) return url;
-                    // Direct HTTPS streams don't need proxying when on HTTPS and avoid serverless timeouts
-                    if (window.location.protocol === 'https:' && url.startsWith('https://')) return url;
-                    // On local development HTTP, direct streaming works natively
-                    if (window.location.protocol === 'http:' && !window.location.hostname.includes('vercel')) return url;
+                    if (url.startsWith('/stream?url=') || url.startsWith('aura://stream?url=') || url.startsWith('blob:') || url.startsWith('data:')) return url;
+                    // Native Electron app doesn't need proxying as it has no browser CORS restrictions
+                    if (window.auraNative?.platform !== 'web' && window.auraNative?.platform) return url;
                     return `/stream?url=${encodeURIComponent(url)}`;
                 },
                 toggleFullScreen: () => {
@@ -417,6 +415,7 @@ tailwind.config = {
             history: safeArray('aura_history'),
             favorites: safeArray('aura_favorites'),
             playbackProgress: safeJSON('aura_playback_progress', {}),
+            seriesProgress: safeJSON('aura_series_progress', {}),
             requestedResumeTime: 0,
             nextEpOverlayTimer: null,
             nextEpCountdownSec: 10,
@@ -2347,8 +2346,17 @@ tailwind.config = {
             const mStr = encObj(movie);
             const badgeHtml = (!isHistory && !actualLive && idx < 10) ? `<div class="absolute -top-2 -left-2 w-8 h-8 rounded-full bg-primary text-white flex items-center justify-center font-black text-xs shadow-lg shadow-primary/40 z-30 border-2 border-[#141414]">#${idx + 1}</div>` : '';
             const aspect = actualLive ? 'aspect-video' : 'aspect-[2/3]';
-            const savedProg = !actualLive && movie.id ? state.playbackProgress[String(movie.id)] : null;
-            const progressVal = savedProg ? savedProg.percentage : (isHistory ? (movie.progress || 10) : 0);
+            let progressVal = 0;
+            if (!actualLive && movie.id) {
+                if (movie.type === 'series') {
+                    const sp = state.seriesProgress[String(movie.id)];
+                    if (sp && sp.percentage) progressVal = sp.percentage;
+                } else {
+                    const savedProg = state.playbackProgress[String(movie.id)];
+                    if (savedProg && savedProg.percentage) progressVal = savedProg.percentage;
+                }
+            }
+            if (isHistory && progressVal === 0) progressVal = movie.progress || 10;
             const progressHtml = (!actualLive && progressVal > 2) ? `<div class="absolute bottom-0 left-0 w-full h-1 bg-gray-800 z-30"><div class="h-full bg-primary shadow-[0_0_10px_#e50914]" style="width: ${progressVal}%"></div></div>` : '';
             const favActive = isFavorite(movie.id);
             const qTag = getStreamQualityTag(movie.title);
@@ -2553,15 +2561,46 @@ tailwind.config = {
                     }
                     
                     if (state.currentSeriesEpisodes.length > 0) {
-                        document.getElementById('detail-play-text').textContent = "Watch S01E01";
+                        const sProg = state.seriesProgress[String(movie.id)];
+                        let targetIndex = 0;
+                        let resumeTime = 0;
+
+                        if (sProg) {
+                            const foundIdx = state.currentSeriesEpisodes.findIndex(e => String(e.id || e.stream_id) === String(sProg.episodeId));
+                            if (foundIdx !== -1) {
+                                targetIndex = foundIdx;
+                            } else if (sProg.episodeIndex >= 0 && sProg.episodeIndex < state.currentSeriesEpisodes.length) {
+                                targetIndex = sProg.episodeIndex;
+                            }
+                            resumeTime = sProg.currentTime || 0;
+                        }
+
+                        const targetEp = state.currentSeriesEpisodes[targetIndex] || state.currentSeriesEpisodes[0];
+                        const isResuming = sProg && (targetIndex > 0 || resumeTime > 10);
+
+                        document.getElementById('detail-play-text').textContent = isResuming 
+                            ? `Resume S${targetEp.season}E${targetEp.episode_num}` 
+                            : `Watch S${targetEp.season}E${targetEp.episode_num}`;
                         playBtn.disabled = false;
-                        playBtn.onclick = () => { closeDetailView(); playStream(movie, true, 0); };
+                        playBtn.onclick = () => { closeDetailView(); playStream(movie, true, targetIndex, resumeTime); };
                         
+                        const activeSeason = targetEp.season || state.seriesSeasons[0];
                         const st = document.getElementById('season-tabs');
-                        st.innerHTML = state.seriesSeasons.map((s, i) => `
-                            <button onclick="renderEpisodesGrid('${s}', this)" class="season-btn text-sm font-bold uppercase tracking-wider pb-4 -mb-[17px] border-b-2 transition-colors ${i === 0 ? 'text-white border-primary' : 'text-gray-500 border-transparent hover:text-gray-300 hover:border-white/50'}">Season ${s}</button>
+                        st.innerHTML = state.seriesSeasons.map((s) => `
+                            <button onclick="renderEpisodesGrid('${s}', this)" class="season-btn text-sm font-bold uppercase tracking-wider pb-4 -mb-[17px] border-b-2 transition-colors ${s == activeSeason ? 'text-white border-primary' : 'text-gray-500 border-transparent hover:text-gray-300 hover:border-white/50'}">Season ${s}</button>
                         `).join('');
-                        renderEpisodesGrid(state.seriesSeasons[0]);
+                        renderEpisodesGrid(activeSeason);
+
+                        // Resume button for series
+                        if (resumeBtn && resumeText) {
+                            if (isResuming && resumeTime > 10) {
+                                resumeBtn.classList.remove('hidden');
+                                resumeText.textContent = `Resume S${targetEp.season}E${targetEp.episode_num} (${formatTime(resumeTime)})`;
+                                resumeBtn.onclick = () => { closeDetailView(); playStream(movie, true, targetIndex, resumeTime); };
+                            } else {
+                                resumeBtn.classList.add('hidden');
+                            }
+                        }
                     } else {
                         document.getElementById('detail-play-text').textContent = "No Episodes";
                     }
@@ -2573,31 +2612,28 @@ tailwind.config = {
                 document.getElementById('detail-play-text').textContent = movie.type === 'live' ? "Watch Live" : "Watch Now";
                 playBtn.disabled = false;
                 playBtn.onclick = () => { closeDetailView(); playStream(movie); };
-            }
 
-            // Resume Playback and Offline Download controls
-            const resumeBtn = document.getElementById('detail-resume-btn');
-            const resumeText = document.getElementById('detail-resume-text');
-            const downloadBtn = document.getElementById('detail-download-btn');
-            const savedProg = state.playbackProgress[String(movie.id)];
-
-            if (movie.type === 'live') {
-                if (resumeBtn) resumeBtn.classList.add('hidden');
-                if (downloadBtn) downloadBtn.classList.add('hidden');
-            } else {
-                if (downloadBtn) downloadBtn.classList.remove('hidden');
+                // Resume Playback for Movies
                 if (savedProg && savedProg.currentTime > 10 && savedProg.percentage < 95) {
                     if (resumeBtn && resumeText) {
                         resumeBtn.classList.remove('hidden');
                         resumeText.textContent = `Resume (${formatTime(savedProg.currentTime)})`;
                         resumeBtn.onclick = () => {
                             closeDetailView();
-                            playStream(movie, movie.type === 'series', 0, savedProg.currentTime);
+                            playStream(movie, false, 0, savedProg.currentTime);
                         };
                     }
                 } else if (resumeBtn) {
                     resumeBtn.classList.add('hidden');
                 }
+            }
+
+            // Download Button for VOD & Series
+            if (movie.type === 'live') {
+                if (resumeBtn) resumeBtn.classList.add('hidden');
+                if (downloadBtn) downloadBtn.classList.add('hidden');
+            } else {
+                if (downloadBtn) downloadBtn.classList.remove('hidden');
             }
         }
 
@@ -2631,11 +2667,17 @@ tailwind.config = {
                 const globalIndex = state.currentSeriesEpisodes.findIndex(e => e.id === ep.id);
                 let img = ep.info?.movie_image;
                 if (!img || img.trim() === '') img = document.getElementById('detail-backdrop').src;
+                const epId = String(ep.id || ep.stream_id);
+                const epProg = state.playbackProgress[epId];
+                const epPct = epProg ? epProg.percentage : 0;
+                const epProgHtml = (epPct > 2) ? `<div class="absolute bottom-0 left-0 w-full h-1 bg-gray-800 z-20"><div class="h-full bg-primary" style="width: ${epPct}%"></div></div>` : '';
+                const epResumeTime = epProg ? (epProg.currentTime || 0) : 0;
                 
                 return `
-                <div class="bg-panelbg rounded-xl overflow-hidden hover:bg-white/5 transition-all border border-white/5 hover:border-white/20 group cursor-pointer flex flex-col shadow-lg" onclick="closeDetailView(); playStream(state.currentSeriesMovie, true, ${globalIndex})">
+                <div class="bg-panelbg rounded-xl overflow-hidden hover:bg-white/5 transition-all border border-white/5 hover:border-white/20 group cursor-pointer flex flex-col shadow-lg" onclick="closeDetailView(); playStream(state.currentSeriesMovie, true, ${globalIndex}, ${epResumeTime})">
                     <div class="aspect-video bg-black relative flex-shrink-0">
                         <img src="${img}" loading="lazy" class="w-full h-full object-cover opacity-70 group-hover:opacity-100 transition-opacity duration-300">
+                        ${epProgHtml}
                         <div class="absolute inset-0 flex items-center justify-center opacity-0 group-hover:opacity-100 transition-opacity duration-300 bg-black/40 backdrop-blur-[1px]">
                             <div class="w-10 h-10 rounded-full bg-white/20 flex items-center justify-center text-white border border-white/30 transform scale-75 group-hover:scale-100 transition-transform shadow-lg">
                                 <i class="fa-solid fa-play ml-1"></i>
@@ -3072,7 +3114,7 @@ tailwind.config = {
                 
                 if (state.currentSeriesEpisodes.length > 0) {
                     setupPlayerDrawerSeries();
-                    playEpisodeLogic(epIndex);
+                    playEpisodeLogic(epIndex, resumeTime);
                 } else {
                     document.getElementById('player-main-title').textContent = "Loading Episodes...";
                     try {
@@ -3089,7 +3131,16 @@ tailwind.config = {
                         }
                         if (state.currentSeriesEpisodes.length > 0) {
                             setupPlayerDrawerSeries();
-                            playEpisodeLogic(0);
+                            let targetEpIdx = epIndex;
+                            let targetResume = resumeTime;
+                            const sProg = state.seriesProgress[String(movie.id)];
+                            if (targetEpIdx === 0 && sProg) {
+                                const foundIdx = state.currentSeriesEpisodes.findIndex(e => String(e.id || e.stream_id) === String(sProg.episodeId));
+                                if (foundIdx !== -1) targetEpIdx = foundIdx;
+                                else if (sProg.episodeIndex >= 0 && sProg.episodeIndex < state.currentSeriesEpisodes.length) targetEpIdx = sProg.episodeIndex;
+                                if (!targetResume) targetResume = sProg.currentTime || 0;
+                            }
+                            playEpisodeLogic(targetEpIdx, targetResume);
                         }
                     } catch (e) {
                         showPlayerError(movie, null);
@@ -3247,8 +3298,9 @@ tailwind.config = {
             setupPlayerDrawerLiveChannels();
         }
 
-        function playEpisodeLogic(index) {
+        function playEpisodeLogic(index, resumeTime = 0) {
             state.currentIndex = index;
+            state.requestedResumeTime = resumeTime || 0;
             state.nextEpOverlayShown = false;
             state.nextEpDismissedForCurrent = false;
             if (typeof dismissNextEpisodeCountdown === 'function') dismissNextEpisodeCountdown();
@@ -3267,6 +3319,26 @@ tailwind.config = {
                 type: 'episode',
                 seriesTitle: state.currentSeriesMovie ? state.currentSeriesMovie.title : ''
             };
+
+            const sId = String(state.currentSeriesMovie?.id || '');
+            if (sId) {
+                const existingProg = state.seriesProgress[sId] || {};
+                state.seriesProgress[sId] = {
+                    ...existingProg,
+                    seriesId: sId,
+                    seriesTitle: state.currentSeriesMovie?.title || '',
+                    episodeIndex: index,
+                    episodeId: String(epId),
+                    season: String(ep.season),
+                    episodeNum: String(ep.episode_num),
+                    episodeTitle: ep.title || '',
+                    currentTime: resumeTime || existingProg.currentTime || 0,
+                    updatedAt: Date.now()
+                };
+                try {
+                    localStorage.setItem('aura_series_progress', JSON.stringify(state.seriesProgress));
+                } catch (_) {}
+            }
             
             executePlayerEngine(epMovieObj);
             setupPlayerDrawerSeries(ep.season);
@@ -3312,8 +3384,11 @@ tailwind.config = {
             list.innerHTML = state.currentSeriesEpisodes.map((ep, index) => {
                 if (ep.season != currentSeason) return ''; 
                 const isActive = index === state.currentIndex;
+                const epId = String(ep.id || ep.stream_id);
+                const epProg = state.playbackProgress[epId];
+                const epResumeTime = epProg ? (epProg.currentTime || 0) : 0;
                 return `
-                    <div onclick="playEpisodeLogic(${index})" class="drawer-item p-2.5 rounded-xl cursor-pointer transition-all duration-200 flex gap-3 ${isActive ? 'is-active-channel bg-primary/20 border border-primary/50 shadow-[0_0_15px_rgba(229,9,20,0.25)]' : 'bg-white/[0.03] hover:bg-white/[0.08] border border-white/5 hover:border-white/20'}">
+                    <div onclick="playEpisodeLogic(${index}, ${epResumeTime})" class="drawer-item p-2.5 rounded-xl cursor-pointer transition-all duration-200 flex gap-3 ${isActive ? 'is-active-channel bg-primary/20 border border-primary/50 shadow-[0_0_15px_rgba(229,9,20,0.25)]' : 'bg-white/[0.03] hover:bg-white/[0.08] border border-white/5 hover:border-white/20'}">
                         <div class="relative w-20 h-14 rounded-lg overflow-hidden flex-shrink-0 bg-black/60 border border-white/10 flex items-center justify-center text-xs text-gray-500 font-bold">
                             ${ep.info?.movie_image ? `<img src="${ep.info.movie_image}" class="w-full h-full object-cover">` : `S${ep.season}E${ep.episode_num}`}
                             ${isActive ? `
@@ -3566,30 +3641,22 @@ tailwind.config = {
             }
 
             if (serverClean) {
-                const sHttp = serverClean.startsWith('http') ? serverClean : `http://${serverClean}`;
-                const sHttps = sHttp.replace(/^http:\/\//i, 'https://');
-                
-                // Prioritize HTTPS candidates when page is on HTTPS to avoid mixed content
-                const isHttpsPage = window.location.protocol === 'https:';
-                const serverList = isHttpsPage ? [sHttps, sHttp] : [sHttp, sHttps];
-                const uniqueServers = [...new Set(serverList)];
-
-                for (const srv of uniqueServers) {
-                    if (movie.type === 'episode') {
-                        urls.push(`${srv}/series/${u}/${p}/${movie.id}.${movie.ext || 'mp4'}`);
-                        urls.push(`${srv}/series/${u}/${p}/${movie.id}.mp4`);
-                        urls.push(`${srv}/series/${u}/${p}/${movie.id}.mkv`);
-                    } else if (isLive) {
-                        urls.push(`${srv}/live/${u}/${p}/${movie.id}.m3u8`);
-                        urls.push(`${srv}/${u}/${p}/${movie.id}.m3u8`);
-                        urls.push(`${srv}/live/${u}/${p}/${movie.id}.ts`);
-                        urls.push(`${srv}/${u}/${p}/${movie.id}.ts`);
-                        urls.push(`${srv}/${u}/${p}/${movie.id}`);
-                    } else {
-                        urls.push(`${srv}/movie/${u}/${p}/${movie.id}.${movie.ext || 'mp4'}`);
-                        urls.push(`${srv}/movie/${u}/${p}/${movie.id}.mp4`);
-                        urls.push(`${srv}/movie/${u}/${p}/${movie.id}.mkv`);
-                    }
+                const srv = serverClean.startsWith('http') ? serverClean : `http://${serverClean}`;
+                if (movie.type === 'episode') {
+                    urls.push(`${srv}/series/${u}/${p}/${movie.id}.${movie.ext || 'mp4'}`);
+                    urls.push(`${srv}/series/${u}/${p}/${movie.id}.mp4`);
+                    urls.push(`${srv}/series/${u}/${p}/${movie.id}.mkv`);
+                } else if (isLive) {
+                    // HLS .m3u8 is the most stable live format across browsers
+                    urls.push(`${srv}/live/${u}/${p}/${movie.id}.m3u8`);
+                    urls.push(`${srv}/${u}/${p}/${movie.id}.m3u8`);
+                    urls.push(`${srv}/live/${u}/${p}/${movie.id}.ts`);
+                    urls.push(`${srv}/${u}/${p}/${movie.id}.ts`);
+                    urls.push(`${srv}/${u}/${p}/${movie.id}`);
+                } else {
+                    urls.push(`${srv}/movie/${u}/${p}/${movie.id}.${movie.ext || 'mp4'}`);
+                    urls.push(`${srv}/movie/${u}/${p}/${movie.id}.mp4`);
+                    urls.push(`${srv}/movie/${u}/${p}/${movie.id}.mkv`);
                 }
             }
 
@@ -3645,7 +3712,7 @@ tailwind.config = {
                 }
                 isAttempting = false;
 
-                // If candidate doesn't begin playing in 6s, smoothly try next candidate
+                // Watchdog: If candidate doesn't begin playing in 10s, try next candidate
                 state.candidateWatchdog = setTimeout(() => {
                     if (state.playbackSessionId !== currentSession) return;
                     if (video.paused || video.readyState < 2) {
@@ -3662,19 +3729,19 @@ tailwind.config = {
                         if (typeof Hls !== 'undefined' && Hls.isSupported()) {
                             const hls = new Hls({
                                 enableWorker: true,
-                                lowLatencyMode: false, // Standard IPTV streams need reliable buffer; false prevents underruns
+                                lowLatencyMode: false,
                                 backBufferLength: 30,
                                 maxBufferLength: 30,
                                 maxMaxBufferLength: 60,
-                                liveSyncDurationCount: 3, // 3 segments sync distance provides stable continuous playback
+                                liveSyncDurationCount: 3,
                                 liveMaxLatencyDurationCount: 8,
                                 liveDurationInfinity: true,
                                 capLevelToPlayerSize: false,
-                                manifestLoadingTimeOut: 12000,
-                                manifestLoadingMaxRetry: 3,
+                                manifestLoadingTimeOut: 15000,
+                                manifestLoadingMaxRetry: 4,
                                 manifestLoadingRetryDelay: 1000,
-                                fragLoadingTimeOut: 15000,
-                                fragLoadingMaxRetry: 4,
+                                fragLoadingTimeOut: 20000,
+                                fragLoadingMaxRetry: 6,
                                 fragLoadingRetryDelay: 1000,
                                 startFragPrefetch: true
                             });
@@ -3685,7 +3752,6 @@ tailwind.config = {
                             hls.on(Hls.Events.MANIFEST_PARSED, () => {
                                 if (state.playbackSessionId !== currentSession) return;
                                 
-                                // Automatically lock to the HIGHEST available quality variant
                                 if (hls.levels && hls.levels.length > 0) {
                                     let bestLevelIndex = 0;
                                     let maxScore = -1;
@@ -3731,16 +3797,10 @@ tailwind.config = {
 
                             hls.on(Hls.Events.ERROR, (event, data) => {
                                 if (state.playbackSessionId !== currentSession) return;
-                                if (data.details === 'manifestLoadError' ||
-                                    data.details === 'manifestParsingError' ||
-                                    data.details === 'manifestLoadTimeOut' ||
-                                    (data.response && data.response.code >= 400)) {
-                                    clearWatchdog();
-                                    cleanupPlayerResources(video);
-                                    attemptPlay();
+                                if (!data.fatal) {
+                                    // Non-fatal errors are internal to Hls.js auto-recovery — never destroy stream
                                     return;
                                 }
-                                if (!data.fatal) return;
                                 if (data.type === Hls.ErrorTypes.NETWORK_ERROR) {
                                     console.warn('HLS fatal network error, auto-recovering with startLoad()...');
                                     hls.startLoad();
@@ -3790,11 +3850,14 @@ tailwind.config = {
                         player.attachMediaElement(video);
                         player.load();
 
-                        player.on(mpegts.Events.ERROR, () => {
+                        player.on(mpegts.Events.ERROR, (errorType, errorDetail) => {
                             if (state.playbackSessionId !== currentSession) return;
-                            clearWatchdog();
-                            cleanupPlayerResources(video);
-                            attemptPlay();
+                            console.warn("mpegts error:", errorType, errorDetail);
+                            if (video.paused && video.currentTime === 0) {
+                                clearWatchdog();
+                                cleanupPlayerResources(video);
+                                attemptPlay();
+                            }
                         });
 
                         const playPromise = player.play();
@@ -3869,6 +3932,13 @@ tailwind.config = {
                 if (typeof dismissNextEpisodeCountdown === 'function') dismissNextEpisodeCountdown();
                 if (state.playingSeries && state.currentIndex < state.currentSeriesEpisodes.length - 1) {
                     changeChannel(1);
+                } else if (isLive) {
+                    console.log("Live stream ended event, auto-reconnecting...");
+                    setTimeout(() => {
+                        if (state.playbackSessionId === currentSession) {
+                            attemptPlay();
+                        }
+                    }, 500);
                 }
             };
 
@@ -4196,6 +4266,30 @@ tailwind.config = {
                     if (now - lastProgressSaveTime > 2000 && video.currentTime > 5) {
                         lastProgressSaveTime = now;
                         savePlaybackProgress(curMovie.id, video.currentTime, video.duration);
+
+                        // Save series progress
+                        if (state.playingSeries && state.currentSeriesMovie?.id) {
+                            const sId = String(state.currentSeriesMovie.id);
+                            const ep = state.currentSeriesEpisodes[state.currentIndex];
+                            if (ep) {
+                                state.seriesProgress[sId] = {
+                                    seriesId: sId,
+                                    seriesTitle: state.currentSeriesMovie.title || '',
+                                    episodeIndex: state.currentIndex,
+                                    episodeId: String(ep.id || ep.stream_id),
+                                    season: String(ep.season),
+                                    episodeNum: String(ep.episode_num),
+                                    episodeTitle: ep.title || '',
+                                    currentTime: Math.floor(video.currentTime),
+                                    duration: Math.floor(video.duration),
+                                    percentage: Math.round((video.currentTime / video.duration) * 100),
+                                    updatedAt: Date.now()
+                                };
+                                try {
+                                    localStorage.setItem('aura_series_progress', JSON.stringify(state.seriesProgress));
+                                } catch (_) {}
+                            }
+                        }
                     }
                 }
 

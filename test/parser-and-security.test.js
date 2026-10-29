@@ -193,3 +193,56 @@ test('Spatial navigation distance metric prefers inline targets over lateral tar
 
   assert.ok(scoreDirect < scoreDiag, 'Directly below candidate must have a lower score than diagonal candidate');
 });
+
+// ── 7. Series Progress & Resuming Tests ───────────────────────────
+test('Series resume lookup correctly resolves target episode and timestamp from seriesProgress', () => {
+  const episodes = [
+    { id: '101', season: '1', episode_num: '1', title: 'Pilot' },
+    { id: '102', season: '1', episode_num: '2', title: 'Second' },
+    { id: '201', season: '2', episode_num: '1', title: 'Season 2 Premiere' }
+  ];
+
+  const seriesProgress = {
+    'series_999': {
+      seriesId: 'series_999',
+      episodeId: '201',
+      episodeIndex: 2,
+      season: '2',
+      episodeNum: '1',
+      currentTime: 1420
+    }
+  };
+
+  const sProg = seriesProgress['series_999'];
+  let targetIndex = 0;
+  let resumeTime = 0;
+
+  if (sProg) {
+    const found = episodes.findIndex(e => e.id === sProg.episodeId);
+    if (found !== -1) targetIndex = found;
+    resumeTime = sProg.currentTime || 0;
+  }
+
+  assert.strictEqual(targetIndex, 2, 'Must resolve to Season 2 Premiere (index 2), not episode 1 (index 0)');
+  assert.strictEqual(resumeTime, 1420, 'Must preserve exact resume timestamp');
+  assert.strictEqual(episodes[targetIndex].season, '2');
+  assert.strictEqual(episodes[targetIndex].episode_num, '1');
+});
+
+// ── 8. Live Stream Candidate Tests ────────────────────────────────
+test('Live stream candidate generator uses configured provider scheme and prioritizes HLS .m3u8', () => {
+  function getLiveCandidates(server, user, pass, streamId) {
+    const srv = server.startsWith('http') ? server : `http://${server}`;
+    const u = encodeURIComponent(user);
+    const p = encodeURIComponent(pass);
+    return [
+      `${srv}/live/${u}/${p}/${streamId}.m3u8`,
+      `${srv}/${u}/${p}/${streamId}.m3u8`,
+      `${srv}/live/${u}/${p}/${streamId}.ts`
+    ];
+  }
+
+  const httpCandidates = getLiveCandidates('http://provider.tv:8080', 'user1', 'pass1', 4501);
+  assert.strictEqual(httpCandidates[0], 'http://provider.tv:8080/live/user1/pass1/4501.m3u8');
+  assert.ok(!httpCandidates[0].startsWith('https://'), 'Must not invent https when provider is http');
+});

@@ -251,7 +251,7 @@
                     <h2 id="detail-title" class="text-4xl md:text-6xl lg:text-7xl font-black text-white tracking-tighter mb-6 drop-shadow-2xl leading-tight"></h2>
                     
                     <div class="flex flex-wrap items-center gap-3 mb-6">
-                        <button id="detail-resume-btn" onclick="resumeCurrentMovie()" class="hidden bg-primary hover:bg-red-700 text-white px-7 py-3 rounded-md font-bold text-sm shadow-[0_0_20px_rgba(229,9,20,0.5)] hover:-translate-y-1 transition-all flex items-center gap-2.5">
+                        <button id="detail-resume-btn" onclick="window.resumeCurrentMovie && window.resumeCurrentMovie()" aria-label="Resume playback" class="hidden bg-primary hover:bg-red-700 text-white px-7 py-3 rounded-md font-bold text-sm shadow-[0_0_20px_rgba(229,9,20,0.5)] hover:-translate-y-1 transition-all flex items-center gap-2.5">
                             <i class="fa-solid fa-play" aria-hidden="true"></i> <span id="detail-resume-text">Resume</span>
                         </button>
                         <button id="detail-play-btn" aria-label="Watch video" class="bg-white/15 hover:bg-white/25 border border-white/20 text-white px-7 py-3 rounded-md font-bold text-sm hover:-translate-y-1 transition-all flex items-center gap-2.5">

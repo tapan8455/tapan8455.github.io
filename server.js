@@ -193,14 +193,28 @@ async function handleStreamProxy(req, res) {
                    contentType.includes('application/x-mpegurl') ||
                    contentType.includes('vnd.apple.mpegurl');
 
+    const isLiveTs = !isM3U8 && (
+      finalPathname.endsWith('.ts') ||
+      targetPathname.endsWith('.ts') ||
+      finalPathname.includes('/live/') ||
+      targetPathname.includes('/live/') ||
+      /^\/(live\/)?[^/]+\/[^/]+\/\d+(\.ts)?$/i.test(targetPathname)
+    );
+
     const outHeaders = {
       'Access-Control-Allow-Origin': '*',
       'Access-Control-Allow-Methods': 'GET, HEAD, OPTIONS',
       'Access-Control-Allow-Headers': '*',
       'Access-Control-Expose-Headers': 'Content-Range, Content-Length, Accept-Ranges',
-      'Cache-Control': 'no-store',
+      'Cache-Control': isLiveTs ? 'no-cache, no-store, must-revalidate' : 'no-store',
       'Accept-Ranges': 'bytes'
     };
+
+    if (isLiveTs) {
+      outHeaders['Pragma'] = 'no-cache';
+      outHeaders['Connection'] = 'keep-alive';
+      outHeaders['X-Accel-Buffering'] = 'no';
+    }
 
     if (reqUrl.searchParams.get('download')) {
       outHeaders['Content-Disposition'] = 'attachment';
@@ -209,7 +223,7 @@ async function handleStreamProxy(req, res) {
     if (upstream.headers.get('content-range')) {
       outHeaders['Content-Range'] = upstream.headers.get('content-range');
     }
-    if (upstream.headers.get('content-length')) {
+    if (upstream.headers.get('content-length') && !isLiveTs) {
       outHeaders['Content-Length'] = upstream.headers.get('content-length');
     }
 
@@ -224,7 +238,10 @@ async function handleStreamProxy(req, res) {
       return;
     }
 
-    if (finalPathname.endsWith('.mp4') || targetPathname.endsWith('.mp4')) {
+    if (isLiveTs) {
+      outHeaders['Content-Type'] = 'video/mp2t';
+      delete outHeaders['Content-Length'];
+    } else if (finalPathname.endsWith('.mp4') || targetPathname.endsWith('.mp4')) {
       outHeaders['Content-Type'] = 'video/mp4';
     } else if (finalPathname.endsWith('.mkv') || targetPathname.endsWith('.mkv')) {
       outHeaders['Content-Type'] = 'video/x-matroska';
@@ -235,6 +252,9 @@ async function handleStreamProxy(req, res) {
     }
 
     res.writeHead(upstream.status, outHeaders);
+    if (typeof res.flushHeaders === 'function') {
+      try { res.flushHeaders(); } catch (_) {}
+    }
 
     if (upstream.body) {
       const { Readable } = require('stream');

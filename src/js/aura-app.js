@@ -2491,10 +2491,26 @@ tailwind.config = {
         }
 
         // --- Details Hero Overlay Logic ---
+        window.resumeCurrentMovie = function() {
+            const movie = state.currentDetailMovie;
+            if (!movie) return;
+            closeDetailView();
+            if (movie.type === 'series') {
+                const sProg = state.seriesProgress[String(movie.id)];
+                let targetIndex = sProg ? (sProg.episodeIndex || 0) : 0;
+                let resumeTime = sProg ? (sProg.currentTime || 0) : 0;
+                playStream(movie, true, targetIndex, resumeTime);
+            } else {
+                const savedProg = state.playbackProgress[String(movie.id)];
+                playStream(movie, false, 0, savedProg ? (savedProg.currentTime || 0) : 0);
+            }
+        };
+
         async function openDetailView(encMovie) {
             const movie = JSON.parse(decodeURIComponent(encMovie));
             state.currentDetailMovie = movie;
             state.currentSeriesMovie = movie; // Crucial fix for episode playback
+            state.currentSeriesId = String(movie.id);
             
             // Set Hero Data
             document.getElementById('detail-backdrop').src = movie.img;
@@ -3055,6 +3071,14 @@ tailwind.config = {
             state.nextEpDismissedForCurrent = false;
             if (typeof dismissNextEpisodeCountdown === 'function') dismissNextEpisodeCountdown();
 
+            // Auto-detect resume timestamp for movies if not explicitly passed
+            if (!isSeriesTrigger && movie.type !== 'series' && movie.type !== 'live' && movie.stream_type !== 'live' && state.currentTab !== 'live' && !state.requestedResumeTime && movie.id) {
+                const savedProg = state.playbackProgress[String(movie.id)];
+                if (savedProg && savedProg.currentTime > 10 && savedProg.percentage < 95) {
+                    state.requestedResumeTime = savedProg.currentTime;
+                }
+            }
+
             // Manage History Array (only track movies/episodes/vod - live channels are non-resumable linear streams)
             if (movie.id && movie.type !== 'live' && movie.stream_type !== 'live' && state.currentTab !== 'live') {
                 state.history = state.history.filter(m => String(m.id) !== String(movie.id));
@@ -3112,10 +3136,8 @@ tailwind.config = {
                 btnNextChan.classList.add('hidden');
                 document.getElementById('drawer-title').textContent = 'Episodes';
                 
-                if (state.currentSeriesEpisodes.length > 0) {
-                    setupPlayerDrawerSeries();
-                    playEpisodeLogic(epIndex, resumeTime);
-                } else {
+                const sameSeries = state.currentSeriesId === String(movie.id) && state.currentSeriesEpisodes && state.currentSeriesEpisodes.length > 0;
+                if (!sameSeries) {
                     document.getElementById('player-main-title').textContent = "Loading Episodes...";
                     try {
                         const seriesData = await fetchXC('get_series_info', `&series_id=${movie.id}`);
@@ -3129,23 +3151,32 @@ tailwind.config = {
                             state.currentSeriesEpisodes.sort((a, b) => (parseInt(a.season) - parseInt(b.season)) || (parseInt(a.episode_num) - parseInt(b.episode_num)));
                             state.seriesSeasons = [...new Set(state.currentSeriesEpisodes.map(ep => ep.season))].sort((a, b) => parseInt(a) - parseInt(b));
                         }
-                        if (state.currentSeriesEpisodes.length > 0) {
-                            setupPlayerDrawerSeries();
-                            let targetEpIdx = epIndex;
-                            let targetResume = resumeTime;
-                            const sProg = state.seriesProgress[String(movie.id)];
-                            if (targetEpIdx === 0 && sProg) {
-                                const foundIdx = state.currentSeriesEpisodes.findIndex(e => String(e.id || e.stream_id) === String(sProg.episodeId));
-                                if (foundIdx !== -1) targetEpIdx = foundIdx;
-                                else if (sProg.episodeIndex >= 0 && sProg.episodeIndex < state.currentSeriesEpisodes.length) targetEpIdx = sProg.episodeIndex;
-                                if (!targetResume) targetResume = sProg.currentTime || 0;
-                            }
-                            playEpisodeLogic(targetEpIdx, targetResume);
-                        }
+                        state.currentSeriesId = String(movie.id);
                     } catch (e) {
                         showPlayerError(movie, null);
+                        return;
                     }
                 }
+
+                if (!state.currentSeriesEpisodes || state.currentSeriesEpisodes.length === 0) {
+                    showPlayerError(movie, null);
+                    return;
+                }
+
+                setupPlayerDrawerSeries();
+
+                let targetEpIdx = epIndex;
+                let targetResume = resumeTime;
+                const sProg = state.seriesProgress[String(movie.id)];
+                // If caller didn't pass an explicit episode trigger or default 0 with no resumeTime, resume last watched episode!
+                if ((!isSeriesTrigger || targetEpIdx === 0) && sProg) {
+                    const foundIdx = state.currentSeriesEpisodes.findIndex(e => String(e.id || e.stream_id) === String(sProg.episodeId));
+                    if (foundIdx !== -1) targetEpIdx = foundIdx;
+                    else if (sProg.episodeIndex >= 0 && sProg.episodeIndex < state.currentSeriesEpisodes.length) targetEpIdx = sProg.episodeIndex;
+                    if (!targetResume && sProg.currentTime > 5) targetResume = sProg.currentTime;
+                }
+
+                playEpisodeLogic(targetEpIdx, targetResume);
                 return;
             }
 
@@ -3300,7 +3331,6 @@ tailwind.config = {
 
         function playEpisodeLogic(index, resumeTime = 0) {
             state.currentIndex = index;
-            state.requestedResumeTime = resumeTime || 0;
             state.nextEpOverlayShown = false;
             state.nextEpDismissedForCurrent = false;
             if (typeof dismissNextEpisodeCountdown === 'function') dismissNextEpisodeCountdown();
@@ -3320,6 +3350,15 @@ tailwind.config = {
                 seriesTitle: state.currentSeriesMovie ? state.currentSeriesMovie.title : ''
             };
 
+            let epResume = resumeTime || 0;
+            if (!epResume) {
+                const epProg = state.playbackProgress[String(epId)];
+                if (epProg && epProg.currentTime > 5 && epProg.percentage < 95) {
+                    epResume = epProg.currentTime;
+                }
+            }
+            state.requestedResumeTime = epResume;
+
             const sId = String(state.currentSeriesMovie?.id || '');
             if (sId) {
                 const existingProg = state.seriesProgress[sId] || {};
@@ -3332,7 +3371,7 @@ tailwind.config = {
                     season: String(ep.season),
                     episodeNum: String(ep.episode_num),
                     episodeTitle: ep.title || '',
-                    currentTime: resumeTime || existingProg.currentTime || 0,
+                    currentTime: epResume,
                     updatedAt: Date.now()
                 };
                 try {
@@ -3604,6 +3643,40 @@ tailwind.config = {
             }
         }
 
+        function applyResumeSeek(targetTime) {
+            if (!targetTime || targetTime <= 0) return;
+            const video = document.getElementById('video-player');
+            if (!video) return;
+            state.requestedResumeTime = targetTime;
+
+            const trySeek = () => {
+                if (!state.requestedResumeTime || state.requestedResumeTime <= 0) return;
+                try {
+                    if (video.readyState >= 2 && video.duration > 0) {
+                        const seekTo = Math.min(state.requestedResumeTime, Math.max(0, video.duration - 5));
+                        if (seekTo > 0 && Math.abs(video.currentTime - seekTo) > 1) {
+                            video.currentTime = seekTo;
+                            const seekBar = document.getElementById('player-seek-bar');
+                            const timeCurrent = document.getElementById('player-time-current');
+                            if (seekBar) seekBar.value = seekTo;
+                            if (timeCurrent) timeCurrent.textContent = formatTime(seekTo);
+                        }
+                        state.requestedResumeTime = 0;
+                    }
+                } catch (_) {}
+            };
+
+            if (video.readyState >= 2 && video.duration > 0) {
+                trySeek();
+            } else {
+                const onCanPlay = () => {
+                    trySeek();
+                    video.removeEventListener('canplay', onCanPlay);
+                };
+                video.addEventListener('canplay', onCanPlay, { once: true });
+            }
+        }
+
         function executePlayerEngine(movie) {
             const video = document.getElementById('video-player');
             hidePlayerError();
@@ -3745,6 +3818,9 @@ tailwind.config = {
                                 fragLoadingRetryDelay: 1000,
                                 startFragPrefetch: true
                             });
+                            if (state.requestedResumeTime && state.requestedResumeTime > 0) {
+                                hls.startPosition = state.requestedResumeTime;
+                            }
                             state.playerEngine = hls;
                             hls.loadSource(proxiedUrl);
                             hls.attachMedia(video);
@@ -3801,6 +3877,13 @@ tailwind.config = {
                                     // Non-fatal errors are internal to Hls.js auto-recovery — never destroy stream
                                     return;
                                 }
+                                if (data.details === 'manifestLoadError' || data.details === 'manifestParsingError') {
+                                    console.warn(`HLS manifest failed (${data.details}), failing over to next candidate...`);
+                                    clearWatchdog();
+                                    cleanupPlayerResources(video);
+                                    attemptPlay();
+                                    return;
+                                }
                                 if (data.type === Hls.ErrorTypes.NETWORK_ERROR) {
                                     console.warn('HLS fatal network error, auto-recovering with startLoad()...');
                                     hls.startLoad();
@@ -3843,8 +3926,12 @@ tailwind.config = {
                         }, {
                             enableWorker: true,
                             lazyLoad: false,
-                            liveBufferLatencyChasing: false,
-                            autoCleanupSourceBuffer: true
+                            liveBufferLatencyChasing: isLive,
+                            liveBufferLatencyMaxLatency: 2.5,
+                            liveBufferLatencyMinRemain: 0.8,
+                            autoCleanupSourceBuffer: true,
+                            autoCleanupMaxBackwardDuration: 30,
+                            autoCleanupMinBackwardDuration: 15
                         });
                         state.playerEngine = player;
                         player.attachMediaElement(video);
@@ -3853,11 +3940,18 @@ tailwind.config = {
                         player.on(mpegts.Events.ERROR, (errorType, errorDetail) => {
                             if (state.playbackSessionId !== currentSession) return;
                             console.warn("mpegts error:", errorType, errorDetail);
-                            if (video.paused && video.currentTime === 0) {
-                                clearWatchdog();
-                                cleanupPlayerResources(video);
-                                attemptPlay();
+                            clearWatchdog();
+                            if (isLive) {
+                                console.warn("Live TS error, auto-reconnecting live stream smoothly...");
+                                try {
+                                    player.unload();
+                                    player.load();
+                                    player.play().catch(() => {});
+                                    return;
+                                } catch (_) {}
                             }
+                            cleanupPlayerResources(video);
+                            attemptPlay();
                         });
 
                         const playPromise = player.play();
@@ -3892,21 +3986,47 @@ tailwind.config = {
                 }
             }
 
+            let liveStallTimer = null;
+            const onLiveStall = () => {
+                if (!isLive || video.paused || state.playbackSessionId !== currentSession) return;
+                if (liveStallTimer) clearTimeout(liveStallTimer);
+                liveStallTimer = setTimeout(() => {
+                    if (state.playbackSessionId !== currentSession || video.paused) return;
+                    console.warn("Live stream stalled for >3.5s, auto-reconnecting stream...");
+                    if (state.playerEngine && typeof state.playerEngine.unload === 'function') {
+                        try {
+                            state.playerEngine.unload();
+                            state.playerEngine.load();
+                            state.playerEngine.play().catch(() => {});
+                            return;
+                        } catch (_) {}
+                    }
+                    cleanupPlayerResources(video);
+                    attemptPlay();
+                }, 3500);
+            };
+
             video.onwaiting = () => {
                 if (state.playbackSessionId !== currentSession) return;
                 if (!video.paused && video.currentTime > 0) {
                     showPlayerSpinner(true);
                 }
+                onLiveStall();
+            };
+            video.onstalled = () => {
+                if (state.playbackSessionId !== currentSession) return;
+                onLiveStall();
             };
             video.onplaying = () => {
                 if (state.playbackSessionId !== currentSession) return;
+                if (liveStallTimer) {
+                    clearTimeout(liveStallTimer);
+                    liveStallTimer = null;
+                }
                 clearWatchdog();
                 showPlayerSpinner(false);
                 if (state.requestedResumeTime && state.requestedResumeTime > 0) {
-                    try {
-                        video.currentTime = state.requestedResumeTime;
-                    } catch (_) {}
-                    state.requestedResumeTime = 0;
+                    applyResumeSeek(state.requestedResumeTime);
                 }
                 // Do not auto-dismiss error dialog if in persistent error state
                 if (!state.hasPlaybackError) {
@@ -4237,10 +4357,7 @@ tailwind.config = {
                 updateScrubberMode();
                 updateQualityBadgeUI();
                 if (state.requestedResumeTime && state.requestedResumeTime > 0) {
-                    try {
-                        video.currentTime = state.requestedResumeTime;
-                    } catch (_) {}
-                    state.requestedResumeTime = 0;
+                    applyResumeSeek(state.requestedResumeTime);
                 }
             };
 

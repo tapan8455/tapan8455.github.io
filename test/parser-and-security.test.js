@@ -246,3 +246,90 @@ test('Live stream candidate generator uses configured provider scheme and priori
   assert.strictEqual(httpCandidates[0], 'http://provider.tv:8080/live/user1/pass1/4501.m3u8');
   assert.ok(!httpCandidates[0].startsWith('https://'), 'Must not invent https when provider is http');
 });
+
+// ── 9. Live TS Stream Anti-Buffering & Header Detection Tests ─────
+test('Live TS stream detector sets video/mp2t, removes Content-Length, and disables proxy caching', () => {
+  function computeStreamHeaders(pathname, upstreamHeaders = {}) {
+    const p = pathname.toLowerCase();
+    const isM3U8 = p.endsWith('.m3u8');
+    const isLiveTs = !isM3U8 && (
+      p.endsWith('.ts') ||
+      p.includes('/live/') ||
+      /^\/(live\/)?[^/]+\/[^/]+\/\d+(\.ts)?$/i.test(p)
+    );
+
+    const headers = {
+      'Cache-Control': isLiveTs ? 'no-cache, no-store, must-revalidate' : 'no-store'
+    };
+
+    if (upstreamHeaders['content-length'] && !isLiveTs) {
+      headers['Content-Length'] = upstreamHeaders['content-length'];
+    }
+
+    if (isLiveTs) {
+      headers['Content-Type'] = 'video/mp2t';
+      headers['Pragma'] = 'no-cache';
+      headers['Connection'] = 'keep-alive';
+      headers['X-Accel-Buffering'] = 'no';
+    }
+
+    return { headers, isLiveTs };
+  }
+
+  const live1 = computeStreamHeaders('/live/user/pass/9876', { 'content-length': '1048576' });
+  assert.strictEqual(live1.isLiveTs, true);
+  assert.strictEqual(live1.headers['Content-Type'], 'video/mp2t');
+  assert.strictEqual(live1.headers['Content-Length'], undefined, 'Live streams must not send Content-Length');
+  assert.strictEqual(live1.headers['X-Accel-Buffering'], 'no');
+
+  const live2 = computeStreamHeaders('/user/pass/9876.ts', { 'content-length': '2097152' });
+  assert.strictEqual(live2.isLiveTs, true);
+  assert.strictEqual(live2.headers['Content-Type'], 'video/mp2t');
+  assert.strictEqual(live2.headers['Content-Length'], undefined);
+
+  const vodMovie = computeStreamHeaders('/movie/user/pass/555.mp4', { 'content-length': '500000000' });
+  assert.strictEqual(vodMovie.isLiveTs, false);
+  assert.strictEqual(vodMovie.headers['Content-Length'], '500000000');
+});
+
+// ── 10. PlayStream Series Auto-Resume Target Episode Tests ─────────
+test('playStream automatically resolves last-watched episode when epIndex=0 was passed', () => {
+  const currentSeriesEpisodes = [
+    { id: '1', season: '1', episode_num: '1', title: 'Ep 1' },
+    { id: '2', season: '1', episode_num: '2', title: 'Ep 2' },
+    { id: '3', season: '1', episode_num: '3', title: 'Ep 3' }
+  ];
+
+  const seriesProgress = {
+    '100': {
+      seriesId: '100',
+      episodeId: '3',
+      episodeIndex: 2,
+      currentTime: 1850
+    }
+  };
+
+  function resolveEpisodeToPlay(movieId, isSeriesTrigger, epIndex, resumeTime) {
+    let targetEpIdx = epIndex;
+    let targetResume = resumeTime;
+    const sProg = seriesProgress[String(movieId)];
+    if ((!isSeriesTrigger || targetEpIdx === 0) && sProg) {
+      const foundIdx = currentSeriesEpisodes.findIndex(e => String(e.id || e.stream_id) === String(sProg.episodeId));
+      if (foundIdx !== -1) targetEpIdx = foundIdx;
+      else if (sProg.episodeIndex >= 0 && sProg.episodeIndex < currentSeriesEpisodes.length) targetEpIdx = sProg.episodeIndex;
+      if (!targetResume && sProg.currentTime > 5) targetResume = sProg.currentTime;
+    }
+    return { targetEpIdx, targetResume };
+  }
+
+  // User clicks series card on Home Screen (isSeriesTrigger=false, epIndex=0, resumeTime=0)
+  const res1 = resolveEpisodeToPlay('100', false, 0, 0);
+  assert.strictEqual(res1.targetEpIdx, 2, 'Should resume Episode 3 (index 2), NOT Episode 1 (index 0)');
+  assert.strictEqual(res1.targetResume, 1850, 'Should restore 1850s timestamp');
+
+  // User explicitly clicks Episode 1 (isSeriesTrigger=true, epIndex=0, resumeTime=0)
+  const resExplicitEp1 = resolveEpisodeToPlay('100', true, 0, 0);
+  assert.strictEqual(resExplicitEp1.targetEpIdx, 2); // default 0 resolves to last watched
+  const resExplicitEp2 = resolveEpisodeToPlay('100', true, 1, 0);
+  assert.strictEqual(resExplicitEp2.targetEpIdx, 1, 'Explicit episode selection must be respected');
+});

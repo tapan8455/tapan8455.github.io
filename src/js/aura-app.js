@@ -12,42 +12,125 @@ tailwind.config = {
             }
         }
 
-// --- Web Bridge Polyfill for Cloud/Browser/Xbox Hosting ---
+// --- Web Bridge Polyfill for Cloud/Browser/Xbox/GitHub Pages Hosting ---
         if (!window.auraNative) {
             window.auraNative = {
                 platform: 'web',
                 version: 'web-2.0.0',
                 apiRequest: async (args) => {
-                    const res = await fetch('/api/request', {
-                        method: 'POST',
-                        headers: { 'Content-Type': 'application/json' },
-                        body: JSON.stringify(args)
-                    });
-                    if (!res.ok) {
-                        const errText = await res.text().catch(() => '');
-                        throw new Error(`Provider server error (${res.status}): ${errText || res.statusText}`);
+                    const isGitHubPages = window.location.hostname.endsWith('github.io');
+                    // When not on GitHub Pages, try local /api/request endpoint first
+                    if (!isGitHubPages) {
+                        try {
+                            const res = await fetch('/api/request', {
+                                method: 'POST',
+                                headers: { 'Content-Type': 'application/json' },
+                                body: JSON.stringify(args)
+                            });
+                            if (res.ok) {
+                                const data = await res.json();
+                                if (data && data.error) throw new Error(data.error);
+                                return data;
+                            }
+                        } catch (err) {
+                            if (!err.message?.includes('404')) {
+                                console.warn('[AURA Web Bridge] /api/request failed, trying direct provider fetch:', err.message);
+                            }
+                        }
                     }
-                    const data = await res.json();
-                    if (data && data.error) throw new Error(data.error);
-                    return data;
+
+                    // Direct client-side Xtream Codes API call (for GitHub Pages & static web)
+                    const srv = (args.server || '').trim().replace(/\/+$/, '');
+                    const u = encodeURIComponent(args.user || '');
+                    const p = encodeURIComponent(args.pass || '');
+                    const action = args.action ? `&action=${encodeURIComponent(args.action)}` : '';
+                    const params = args.params || '';
+                    const directUrl = `${srv}/player_api.php?username=${u}&password=${p}${action}${params}`;
+
+                    try {
+                        const directRes = await fetch(directUrl);
+                        if (!directRes.ok) {
+                            throw new Error(`Provider returned HTTP ${directRes.status}`);
+                        }
+                        const directData = await directRes.json();
+                        if (directData && directData.error) throw new Error(directData.error);
+                        return directData;
+                    } catch (directErr) {
+                        const customProxy = (localStorage.getItem('aura_custom_proxy') || '').trim();
+                        if (customProxy) {
+                            const proxiedUrl = customProxy.includes('%s') 
+                                ? customProxy.replace('%s', encodeURIComponent(directUrl)) 
+                                : `${customProxy.replace(/\/+$/, '')}/${encodeURIComponent(directUrl)}`;
+                            const pRes = await fetch(proxiedUrl);
+                            if (pRes.ok) return await pRes.json();
+                        }
+                        throw new Error(`Provider request failed: ${directErr.message}. If your provider lacks CORS on HTTPS web, use direct media playback or configure an HTTPS CORS proxy in settings.`);
+                    }
                 },
                 testConnection: async (args) => {
-                    const res = await fetch('/api/test-connection', {
-                        method: 'POST',
-                        headers: { 'Content-Type': 'application/json' },
-                        body: JSON.stringify(args)
-                    });
-                    if (!res.ok) {
-                        const errText = await res.text().catch(() => '');
-                        return { success: false, error: `Connection failed (${res.status}): ${errText || res.statusText}` };
+                    const isGitHubPages = window.location.hostname.endsWith('github.io');
+                    if (!isGitHubPages) {
+                        try {
+                            const res = await fetch('/api/test-connection', {
+                                method: 'POST',
+                                headers: { 'Content-Type': 'application/json' },
+                                body: JSON.stringify(args)
+                            });
+                            if (res.ok) return await res.json();
+                        } catch (_) {}
                     }
-                    return await res.json();
+
+                    // Direct client-side authentication test (for GitHub Pages & static web)
+                    const srv = (args.server || '').trim().replace(/\/+$/, '');
+                    const u = encodeURIComponent(args.user || '');
+                    const p = encodeURIComponent(args.pass || '');
+                    const testUrl = `${srv}/player_api.php?username=${u}&password=${p}`;
+
+                    try {
+                        const res = await fetch(testUrl);
+                        if (!res.ok) return { success: false, error: `Server error HTTP ${res.status}` };
+                        const data = await res.json();
+                        if (data && data.user_info) {
+                            if (data.user_info.auth === 0) {
+                                return { success: false, error: 'Invalid username or password' };
+                            }
+                            return { success: true, data };
+                        }
+                        return { success: true, data };
+                    } catch (err) {
+                        const customProxy = (localStorage.getItem('aura_custom_proxy') || '').trim();
+                        if (customProxy) {
+                            try {
+                                const proxiedUrl = customProxy.includes('%s') 
+                                    ? customProxy.replace('%s', encodeURIComponent(testUrl)) 
+                                    : `${customProxy.replace(/\/+$/, '')}/${encodeURIComponent(testUrl)}`;
+                                const pRes = await fetch(proxiedUrl);
+                                if (pRes.ok) {
+                                    const pData = await pRes.json();
+                                    return { success: true, data: pData };
+                                }
+                            } catch (_) {}
+                        }
+                        return { success: false, error: `Connection failed: ${err.message}. Ensure your provider allows HTTPS/CORS.` };
+                    }
                 },
                 mediaProxy: (url) => {
                     if (!url) return '';
                     if (url.startsWith('/stream?url=') || url.startsWith('aura://stream?url=') || url.startsWith('blob:') || url.startsWith('data:')) return url;
                     // Native Electron app doesn't need proxying as it has no browser CORS restrictions
                     if (window.auraNative?.platform !== 'web' && window.auraNative?.platform) return url;
+                    
+                    const isGitHubPages = window.location.hostname.endsWith('github.io');
+                    // On GitHub Pages or static host without backend proxy, return direct URL or user-configured proxy
+                    if (isGitHubPages) {
+                        const customProxy = (localStorage.getItem('aura_custom_proxy') || '').trim();
+                        if (customProxy) {
+                            return customProxy.includes('%s')
+                                ? customProxy.replace('%s', encodeURIComponent(url))
+                                : `${customProxy.replace(/\/+$/, '')}/${encodeURIComponent(url)}`;
+                        }
+                        return url;
+                    }
                     return `/stream?url=${encodeURIComponent(url)}`;
                 },
                 toggleFullScreen: () => {

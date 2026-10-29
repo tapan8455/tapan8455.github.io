@@ -235,7 +235,10 @@ function createWindow() {
     }
   });
 
-  mainWindow.loadFile(path.join(__dirname, 'src', 'index.html'));
+  const indexPath = fs.existsSync(path.join(__dirname, 'index.html'))
+    ? path.join(__dirname, 'index.html')
+    : path.join(__dirname, 'src', 'index.html');
+  mainWindow.loadFile(indexPath);
   mainWindow.on('closed', () => { mainWindow = null; });
 }
 

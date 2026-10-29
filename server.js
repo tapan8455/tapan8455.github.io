@@ -398,13 +398,15 @@ const server = http.createServer(async (req, res) => {
   // Static File Serving
   let filePath = pathname === '/' ? '/index.html' : pathname;
   let safePath = path.normalize(filePath).replace(/^(\.\.[\/\\])+/, '').replace(/^[/\\]+/, '');
-  let fullPath = path.join(__dirname, 'src', safePath);
-
-  fs.stat(fullPath, (err, stats) => {
-    if (err || !stats.isFile()) {
-      // Fallback to index.html (SPA)
-      fullPath = path.join(__dirname, 'src', 'index.html');
-    }
+  let fullPath = path.join(__dirname, safePath);
+  if (!fs.existsSync(fullPath) || !fs.statSync(fullPath).isFile()) {
+    fullPath = path.join(__dirname, 'src', safePath);
+  }
+  if (!fs.existsSync(fullPath) || !fs.statSync(fullPath).isFile()) {
+    fullPath = fs.existsSync(path.join(__dirname, 'index.html'))
+      ? path.join(__dirname, 'index.html')
+      : path.join(__dirname, 'src', 'index.html');
+  }
 
     const ext = path.extname(fullPath).toLowerCase();
     const contentType = MIME_TYPES[ext] || 'application/octet-stream';
@@ -421,7 +423,6 @@ const server = http.createServer(async (req, res) => {
       });
       res.end(content);
     });
-  });
 });
 
 if (require.main === module) {

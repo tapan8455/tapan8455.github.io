@@ -33,7 +33,12 @@ self.addEventListener('activate', (event) => {
 self.addEventListener('fetch', (event) => {
   const url = new URL(event.request.url);
 
-  // 1. Bypass all media stream URLs, HLS manifests, TS segments
+  // 1. Only handle same-origin requests for the app shell — completely ignore third-party CDNs, poster images, etc.
+  if (url.origin !== self.location.origin) {
+    return;
+  }
+
+  // 2. Bypass all media stream URLs, HLS manifests, TS segments
   if (
     url.pathname.startsWith('/stream') ||
     url.pathname.endsWith('.m3u8') ||
@@ -43,17 +48,17 @@ self.addEventListener('fetch', (event) => {
     return;
   }
 
-  // 2. Bypass all provider API requests
+  // 3. Bypass all provider API requests
   if (url.pathname.startsWith('/api/') || url.pathname.includes('player_api.php')) {
     return;
   }
 
-  // 3. For non-GET requests, bypass
+  // 4. For non-GET requests, bypass
   if (event.request.method !== 'GET') {
     return;
   }
 
-  // 4. Stale-while-revalidate for app shell
+  // 5. Stale-while-revalidate for local app shell
   event.respondWith(
     caches.match(event.request).then((cachedResponse) => {
       const fetchPromise = fetch(event.request).then((networkResponse) => {
@@ -64,7 +69,9 @@ self.addEventListener('fetch', (event) => {
           });
         }
         return networkResponse;
-      }).catch(() => cachedResponse);
+      }).catch(() => {
+        return cachedResponse || new Response('Offline', { status: 503, statusText: 'Offline' });
+      });
 
       return cachedResponse || fetchPromise;
     })

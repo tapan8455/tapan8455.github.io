@@ -265,31 +265,31 @@
                 </div>
             </div>
         </div>
-
-        <!-- Mobile Bottom Navigation Bar (Fixed at bottom on mobile) -->
-        <nav id="mobile-nav-bar" class="md:hidden fixed bottom-0 left-0 right-0 h-16 bg-[#111114]/95 backdrop-blur-2xl border-t border-white/10 flex items-center justify-around z-50 pb-safe select-none">
-            <button onclick="setTab('vod')" id="mob-nav-vod" class="flex flex-col items-center justify-center text-primary transition-colors py-1 flex-1 select-none" style="touch-action: manipulation;">
-                <i class="fa-solid fa-film text-base pointer-events-none"></i>
-                <span class="text-[10px] font-bold mt-1 pointer-events-none">Movies</span>
-            </button>
-            <button onclick="setTab('series')" id="mob-nav-series" class="flex flex-col items-center justify-center text-gray-400 hover:text-white transition-colors py-1 flex-1 select-none" style="touch-action: manipulation;">
-                <i class="fa-solid fa-layer-group text-base pointer-events-none"></i>
-                <span class="text-[10px] font-bold mt-1 pointer-events-none">Series</span>
-            </button>
-            <button onclick="setTab('live')" id="mob-nav-live" class="flex flex-col items-center justify-center text-gray-400 hover:text-white transition-colors py-1 flex-1 select-none" style="touch-action: manipulation;">
-                <i class="fa-solid fa-tv text-base pointer-events-none"></i>
-                <span class="text-[10px] font-bold mt-1 pointer-events-none">Live TV</span>
-            </button>
-            <button onclick="setTab('favorites')" id="mob-nav-favorites" class="flex flex-col items-center justify-center text-gray-400 hover:text-white transition-colors py-1 flex-1 select-none" style="touch-action: manipulation;">
-                <i class="fa-solid fa-heart text-base pointer-events-none"></i>
-                <span class="text-[10px] font-bold mt-1 pointer-events-none">Favorites</span>
-            </button>
-            <button onclick="setTab('search')" id="mob-nav-search" class="flex flex-col items-center justify-center text-gray-400 hover:text-white transition-colors py-1 flex-1 select-none" style="touch-action: manipulation;">
-                <i class="fa-solid fa-search text-base pointer-events-none"></i>
-                <span class="text-[10px] font-bold mt-1 pointer-events-none">Search</span>
-            </button>
-        </nav>
     </main>
+
+    <!-- Mobile Bottom Navigation Bar (Top-level under body for clean stacking and unblocked touch events) -->
+    <nav id="mobile-nav-bar" class="md:hidden fixed bottom-0 left-0 right-0 h-16 bg-[#111114]/95 backdrop-blur-2xl border-t border-white/10 flex items-center justify-around z-[100] pb-safe select-none">
+        <button onclick="setTab('vod')" id="mob-nav-vod" class="flex flex-col items-center justify-center text-primary transition-colors py-1 flex-1 select-none" style="touch-action: manipulation;">
+            <i class="fa-solid fa-film text-base pointer-events-none"></i>
+            <span class="text-[10px] font-bold mt-1 pointer-events-none">Movies</span>
+        </button>
+        <button onclick="setTab('series')" id="mob-nav-series" class="flex flex-col items-center justify-center text-gray-400 hover:text-white transition-colors py-1 flex-1 select-none" style="touch-action: manipulation;">
+            <i class="fa-solid fa-layer-group text-base pointer-events-none"></i>
+            <span class="text-[10px] font-bold mt-1 pointer-events-none">Series</span>
+        </button>
+        <button onclick="setTab('live')" id="mob-nav-live" class="flex flex-col items-center justify-center text-gray-400 hover:text-white transition-colors py-1 flex-1 select-none" style="touch-action: manipulation;">
+            <i class="fa-solid fa-tv text-base pointer-events-none"></i>
+            <span class="text-[10px] font-bold mt-1 pointer-events-none">Live TV</span>
+        </button>
+        <button onclick="setTab('favorites')" id="mob-nav-favorites" class="flex flex-col items-center justify-center text-gray-400 hover:text-white transition-colors py-1 flex-1 select-none" style="touch-action: manipulation;">
+            <i class="fa-solid fa-heart text-base pointer-events-none"></i>
+            <span class="text-[10px] font-bold mt-1 pointer-events-none">Favorites</span>
+        </button>
+        <button onclick="setTab('search')" id="mob-nav-search" class="flex flex-col items-center justify-center text-gray-400 hover:text-white transition-colors py-1 flex-1 select-none" style="touch-action: manipulation;">
+            <i class="fa-solid fa-search text-base pointer-events-none"></i>
+            <span class="text-[10px] font-bold mt-1 pointer-events-none">Search</span>
+        </button>
+    </nav>
 
     <!-- Fullscreen Player Modal -->
     <div id="player-modal" class="fixed inset-0 z-[500] hidden bg-black flex flex-col items-center justify-center opacity-0 transition-opacity duration-300">

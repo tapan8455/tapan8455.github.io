@@ -2743,6 +2743,10 @@ tailwind.config = {
 
             const playBtn = document.getElementById('detail-play-btn');
             const seriesContainer = document.getElementById('series-container');
+            const resumeBtn = document.getElementById('detail-resume-btn');
+            const resumeText = document.getElementById('detail-resume-text');
+            const downloadBtn = document.getElementById('detail-download-btn');
+            const savedProg = state.playbackProgress[String(movie.id)];
 
             // Slide in View
             const overlay = document.getElementById('detail-overlay');
@@ -2923,6 +2927,8 @@ tailwind.config = {
             state.hasPlaybackError = false;
             const errBox = document.getElementById('player-error');
             if (errBox) errBox.classList.add('hidden');
+            const centerErr = document.getElementById('player-center-error');
+            if (centerErr) centerErr.classList.add('hidden');
         }
 
         function copyCurrentStreamUrl(includeCreds = false) {
@@ -3916,21 +3922,29 @@ tailwind.config = {
 
             if (serverClean) {
                 const srv = serverClean.startsWith('http') ? serverClean : `http://${serverClean}`;
-                if (movie.type === 'episode') {
-                    urls.push(`${srv}/series/${u}/${p}/${movie.id}.${movie.ext || 'mp4'}`);
-                    urls.push(`${srv}/series/${u}/${p}/${movie.id}.mp4`);
-                    urls.push(`${srv}/series/${u}/${p}/${movie.id}.mkv`);
-                } else if (isLive) {
-                    // HLS .m3u8 is the most stable live format across browsers
-                    urls.push(`${srv}/live/${u}/${p}/${movie.id}.m3u8`);
-                    urls.push(`${srv}/${u}/${p}/${movie.id}.m3u8`);
-                    urls.push(`${srv}/live/${u}/${p}/${movie.id}.ts`);
-                    urls.push(`${srv}/${u}/${p}/${movie.id}.ts`);
-                    urls.push(`${srv}/${u}/${p}/${movie.id}`);
-                } else {
-                    urls.push(`${srv}/movie/${u}/${p}/${movie.id}.${movie.ext || 'mp4'}`);
-                    urls.push(`${srv}/movie/${u}/${p}/${movie.id}.mp4`);
-                    urls.push(`${srv}/movie/${u}/${p}/${movie.id}.mkv`);
+                const isHttpsPage = window.location.protocol === 'https:';
+                
+                // When running on HTTPS (e.g. GitHub Pages), prioritize HTTPS candidates to avoid mixed-content blocking
+                const srvHttps = srv.replace(/^http:\/\//i, 'https://');
+                const srvHttp = srv.replace(/^https:\/\//i, 'http://');
+                const srvs = (isHttpsPage && !window.location.hostname.includes('localhost')) ? [srvHttps, srvHttp] : [srvHttp, srvHttps];
+
+                for (const s of srvs) {
+                    if (movie.type === 'episode') {
+                        urls.push(`${s}/series/${u}/${p}/${movie.id}.${movie.ext || 'mp4'}`);
+                        urls.push(`${s}/series/${u}/${p}/${movie.id}.mp4`);
+                        urls.push(`${s}/series/${u}/${p}/${movie.id}.mkv`);
+                    } else if (isLive) {
+                        urls.push(`${s}/live/${u}/${p}/${movie.id}.m3u8`);
+                        urls.push(`${s}/${u}/${p}/${movie.id}.m3u8`);
+                        urls.push(`${s}/live/${u}/${p}/${movie.id}.ts`);
+                        urls.push(`${s}/${u}/${p}/${movie.id}.ts`);
+                        urls.push(`${s}/${u}/${p}/${movie.id}`);
+                    } else {
+                        urls.push(`${s}/movie/${u}/${p}/${movie.id}.${movie.ext || 'mp4'}`);
+                        urls.push(`${s}/movie/${u}/${p}/${movie.id}.mp4`);
+                        urls.push(`${s}/movie/${u}/${p}/${movie.id}.mkv`);
+                    }
                 }
             }
 
@@ -4138,12 +4152,15 @@ tailwind.config = {
                         player.attachMediaElement(video);
                         player.load();
 
+                        let mpegtsErrorCount = 0;
                         player.on(mpegts.Events.ERROR, (errorType, errorDetail) => {
                             if (state.playbackSessionId !== currentSession) return;
                             console.warn("mpegts error:", errorType, errorDetail);
                             clearWatchdog();
-                            if (isLive) {
-                                console.warn("Live TS error, auto-reconnecting live stream smoothly...");
+                            // Only auto-reconnect if it was actively playing (currentTime > 0) to avoid infinite loop on initial failure
+                            if (isLive && video.currentTime > 0 && mpegtsErrorCount < 2) {
+                                mpegtsErrorCount++;
+                                console.warn("Live TS stall, attempting auto-reconnect...");
                                 try {
                                     player.unload();
                                     player.load();
@@ -4269,8 +4286,12 @@ tailwind.config = {
         function showPlayerError(movie, failedUrl, errorReason = null) {
             state.hasPlaybackError = true;
             showPlayerSpinner(false);
+            if (window.showPlayerControls) window.showPlayerControls(300000);
+            
             const errBox = document.getElementById('player-error');
             if (errBox) errBox.classList.remove('hidden');
+            const centerErr = document.getElementById('player-center-error');
+            if (centerErr) centerErr.classList.remove('hidden');
 
             const serverClean = getServer();
             let streamUrl = failedUrl || (movie.type === 'live' ? `${serverClean}/${config.user}/${config.pass}/${movie.id}` : `${serverClean}/movie/${config.user}/${config.pass}/${movie.id}.${movie.ext}`);
@@ -4309,14 +4330,23 @@ tailwind.config = {
                 title = 'Authentication Error';
                 desc = 'Account subscription may have expired or max connections reached.';
             } else if (isDirectMixed) {
-                title = 'Unencrypted HTTP Stream';
-                desc = 'Stream served over unencrypted HTTP. Click "Open in VLC" to watch directly, or connect via HTTPS.';
+                title = 'Insecure HTTP Stream Blocked';
+                desc = 'Web browsers on HTTPS (like GitHub Pages) block unencrypted HTTP streams. Click "Open in VLC" to watch directly, or allow insecure content in Chrome site settings.';
             }
 
             const titleEl = document.getElementById('player-error-title');
             const descEl = document.getElementById('player-error-desc');
             if (titleEl) titleEl.textContent = title;
             if (descEl) descEl.textContent = desc;
+
+            const centerTitle = document.getElementById('player-center-title');
+            const centerDesc = document.getElementById('player-center-desc');
+            if (centerTitle) centerTitle.textContent = title;
+            if (centerDesc) centerDesc.textContent = desc;
+
+            const mixedTip = document.getElementById('player-center-mixed-tip');
+            if (mixedTip) mixedTip.classList.toggle('hidden', !isDirectMixed);
+
             announceA11y(`Playback error: ${title}. ${desc}`);
             
             const m3uContent = `#EXTM3U\n#EXTVLCOPT:http-user-agent=IPTVSmartersPro\n#EXTVLCOPT:http-referrer=${serverClean}/\n#EXTINF:-1,${String(movie.title).replace(/[\r\n]/g, ' ')}\n${streamUrl}`;
@@ -4329,6 +4359,11 @@ tailwind.config = {
             if (vlcEl) {
                 vlcEl.href = playerBlobUrl;
                 vlcEl.download = `${(movie.title || 'stream').replace(/[^a-z0-9]/gi, '_').toLowerCase()}.m3u`;
+            }
+            const centerVlcEl = document.getElementById('center-vlc-download');
+            if (centerVlcEl) {
+                centerVlcEl.href = playerBlobUrl;
+                centerVlcEl.download = `${(movie.title || 'stream').replace(/[^a-z0-9]/gi, '_').toLowerCase()}.m3u`;
             }
         }
 

@@ -348,6 +348,49 @@
             <span class="text-xs text-white/90 font-bold uppercase tracking-widest drop-shadow">Connecting to stream...</span>
         </div>
 
+        <!-- Prominent Centered Playback Error Overlay -->
+        <div id="player-center-error" class="absolute inset-0 flex flex-col items-center justify-center pointer-events-auto z-50 bg-black/90 backdrop-blur-xl p-4 sm:p-6 hidden text-center animate-fade-in select-none">
+            <div class="w-16 h-16 sm:w-20 sm:h-20 rounded-full bg-red-500/10 border border-red-500/30 flex items-center justify-center text-red-500 text-3xl sm:text-4xl mb-4 shadow-[0_0_30px_rgba(239,68,68,0.3)]">
+                <i class="fa-solid fa-triangle-exclamation" aria-hidden="true"></i>
+            </div>
+            <h3 id="player-center-title" class="text-lg sm:text-2xl font-black text-white mb-2 max-w-lg">Stream Unavailable</h3>
+            <p id="player-center-desc" class="text-xs sm:text-sm text-gray-300 max-w-md leading-relaxed mb-6 font-medium">Stream codec or connection temporarily unresponsive.</p>
+            
+            <!-- Quick Action Buttons -->
+            <div class="flex flex-wrap items-center justify-center gap-2.5 max-w-md w-full mb-4">
+                <button onclick="openInVlcDirect()" class="flex-1 min-w-[140px] bg-amber-600 hover:bg-amber-700 text-white font-bold py-2.5 px-4 rounded-xl text-xs uppercase tracking-wider flex items-center justify-center gap-2 shadow-lg active:scale-95 transition-all">
+                    <i class="fa-solid fa-play text-[10px]"></i> Open in VLC
+                </button>
+                <a id="center-vlc-download" href="#" download class="flex-1 min-w-[140px] bg-white/10 hover:bg-white/20 border border-white/20 text-white font-bold py-2.5 px-4 rounded-xl text-xs uppercase tracking-wider text-center active:scale-95 transition-all">
+                    VLC Playlist (.M3U)
+                </a>
+            </div>
+            <div class="flex flex-wrap items-center justify-center gap-2.5 max-w-md w-full">
+                <button onclick="retryCurrentStream()" class="bg-primary hover:bg-red-700 text-white font-bold py-2 px-5 rounded-lg text-xs uppercase tracking-wider transition-colors active:scale-95">
+                    <i class="fa-solid fa-rotate-right mr-1"></i> Retry
+                </button>
+                <button onclick="openProfileModal(); closePlayer();" class="bg-white/10 hover:bg-white/20 border border-white/20 text-white font-bold py-2 px-4 rounded-lg text-xs uppercase tracking-wider transition-colors">
+                    <i class="fa-solid fa-gear mr-1"></i> Settings / Proxy
+                </button>
+                <button onclick="closePlayer()" class="bg-transparent hover:bg-white/5 text-gray-400 hover:text-white font-semibold py-2 px-4 rounded-lg text-xs transition-colors">
+                    Back to Browse
+                </button>
+            </div>
+
+            <!-- Insecure Content / Mixed Content Notice for GitHub Pages -->
+            <div id="player-center-mixed-tip" class="hidden mt-6 p-4 bg-amber-500/10 border border-amber-500/30 rounded-xl text-left max-w-md text-xs text-amber-200/90 leading-relaxed">
+                <div class="flex items-center gap-2 font-bold text-amber-400 mb-1.5 text-sm">
+                    <i class="fa-solid fa-lightbulb"></i> Watch Inside Browser (Chrome / Edge)
+                </div>
+                Because this web app runs on HTTPS, browsers block unencrypted HTTP streams from IPTV providers. To stream directly inside the browser:
+                <ol class="list-decimal list-inside mt-2 space-y-1 text-gray-300">
+                    <li>Click the <b>Site settings / Tune icon</b> (left of URL bar).</li>
+                    <li>Select <b>Site settings</b> &rarr; find <b>Insecure content</b>.</li>
+                    <li>Change it to <b>Allow</b> and reload the page!</li>
+                </ol>
+            </div>
+        </div>
+
         <!-- Volume HUD Indicator (macOS / Apple TV style) -->
         <div id="volume-hud" class="absolute top-1/2 left-1/2 -translate-x-1/2 -translate-y-1/2 bg-black/85 backdrop-blur-2xl border border-white/15 px-6 py-5 rounded-2xl flex flex-col items-center gap-3 shadow-2xl pointer-events-none transition-all duration-200 opacity-0 scale-90 z-50">
             <i id="volume-hud-icon" class="fa-solid fa-volume-high text-3xl text-white"></i>

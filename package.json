@@ -9,6 +9,7 @@
     "node": ">=18.0.0"
   },
   "scripts": {
+    "test": "node --test test/*.test.js",
     "start": "node start.js",
     "serve": "node server.js",
     "web": "node server.js",

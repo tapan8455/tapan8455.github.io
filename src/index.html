@@ -2,9 +2,26 @@
 <html lang="en" class="scroll-smooth">
 <head>
     <meta charset="UTF-8">
-    <meta name="viewport" content="width=device-width, initial-scale=1.0, maximum-scale=1.0, user-scalable=no, viewport-fit=cover">
-    <title>AURA IPTV | Ultimate macOS Edition</title>
+    <meta name="viewport" content="width=device-width, initial-scale=1, viewport-fit=cover">
+    <title>AURA IPTV — Universal Web & Desktop Player</title>
+    <meta name="description" content="Fast, accessible, client-side IPTV web and desktop player supporting Xtream Codes, M3U playlists, and EPG. Private and zero telemetry.">
+    <meta name="theme-color" content="#0A0A0A">
+    <link rel="canonical" href="https://aura-iptv-universal-web-desktop.vercel.app/">
+    <link rel="manifest" href="./manifest.webmanifest">
+    <link rel="icon" type="image/svg+xml" href="data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 100 100'%3E%3Crect width='100' height='100' rx='20' fill='%230A0A0A'/%3E%3Cpolygon points='38,28 75,50 38,72' fill='%23E50914'/%3E%3C/svg%3E">
     
+    <!-- Open Graph / Facebook -->
+    <meta property="og:type" content="website">
+    <meta property="og:url" content="https://aura-iptv-universal-web-desktop.vercel.app/">
+    <meta property="og:title" content="AURA IPTV — Universal Web & Desktop Player">
+    <meta property="og:description" content="Private, fast, client-side IPTV player for Web, macOS, Windows, and Linux.">
+    <meta property="og:image" content="data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 1200 630'%3E%3Crect width='1200' height='630' fill='%230A0A0A'/%3E%3Ctext x='600' y='320' font-family='sans-serif' font-size='96' font-weight='900' fill='%23E50914' text-anchor='middle'%3EAURA IPTV%3C/text%3E%3Ctext x='600' y='390' font-family='sans-serif' font-size='32' fill='%23999999' text-anchor='middle'%3EUniversal Web &amp; Desktop Player%3C/text%3E%3C/svg%3E">
+
+    <!-- Twitter -->
+    <meta name="twitter:card" content="summary_large_image">
+    <meta name="twitter:title" content="AURA IPTV — Universal Web & Desktop Player">
+    <meta name="twitter:description" content="Private, fast, client-side IPTV player for Web, macOS, Windows, and Linux.">
+
     <link rel="preconnect" href="https://fonts.googleapis.com">
     <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
     <link href="https://fonts.googleapis.com/css2?family=Inter:wght@300;400;500;600;700;800;900&display=swap" rel="stylesheet">
@@ -36,8 +53,20 @@
 </head>
 <body class="antialiased selection:bg-primary selection:text-white h-screen flex text-sm">
 
+    <!-- Accessible Skip Link & Announcer -->
+    <a href="#main-content" class="sr-only focus:not-sr-only focus:fixed focus:top-3 focus:left-3 focus:z-[9999] focus:bg-primary focus:text-white focus:px-4 focus:py-2 focus:rounded-lg focus:font-bold focus:shadow-2xl focus:outline-none">Skip to content</a>
+    <div id="a11y-status" class="sr-only" role="status" aria-live="polite" aria-atomic="true"></div>
+
+    <!-- NoScript Fallback -->
+    <noscript>
+        <div class="fixed inset-0 bg-[#0A0A0A] text-white flex flex-col items-center justify-center p-6 text-center z-[99999]">
+            <h1 class="text-2xl font-black text-primary mb-2">JavaScript Required</h1>
+            <p class="text-gray-300 max-w-md text-sm">AURA IPTV requires JavaScript to decode and stream media in your browser. Please enable JavaScript to continue.</p>
+        </div>
+    </noscript>
+
     <!-- Left Sidebar Navigation (Desktop Persistent / Mobile Drawer) -->
-    <aside class="w-[260px] flex-shrink-0 bg-sidebar border-r border-white/5 flex flex-col z-50 transition-transform duration-300 md:translate-x-0 fixed md:relative h-full -translate-x-full select-none shadow-2xl md:shadow-none" id="app-sidebar" style="-webkit-touch-callout: none; -webkit-user-select: none; user-select: none;">
+    <aside aria-label="Sidebar Navigation" class="w-[260px] flex-shrink-0 bg-sidebar border-r border-white/5 flex flex-col z-50 transition-transform duration-300 md:translate-x-0 fixed md:relative h-full -translate-x-full select-none shadow-2xl md:shadow-none" id="app-sidebar" style="-webkit-touch-callout: none; -webkit-user-select: none; user-select: none;">
         <!-- App Header / Traffic Lights spacer for macOS (pl-20 clears traffic lights at x:16, y:16) -->
         <div class="h-16 flex items-center pl-20 pr-4 border-b border-white/5 titlebar-drag flex-shrink-0">
             <div class="flex items-center gap-2 no-drag w-full justify-between">
@@ -45,13 +74,13 @@
                     <span class="font-black text-xl tracking-tighter text-white">AURA</span>
                     <span class="text-[9px] bg-primary/20 text-primary border border-primary/30 px-1.5 py-0.5 rounded font-black tracking-widest uppercase">PRO</span>
                 </div>
-                <button class="md:hidden text-gray-400 hover:text-white p-2" onclick="toggleSidebar()" style="touch-action: manipulation;"><i class="fa-solid fa-xmark text-lg"></i></button>
+                <button class="md:hidden text-gray-400 hover:text-white p-2" onclick="toggleSidebar()" aria-label="Close sidebar" style="touch-action: manipulation;"><i class="fa-solid fa-xmark text-lg"></i></button>
             </div>
         </div>
 
         <!-- Primary Nav Tabs -->
-        <nav class="p-3 space-y-1 select-none">
-            <button onclick="setTab('live')" id="nav-live" class="w-full flex items-center gap-3 px-3 py-2.5 rounded-lg text-sm font-semibold text-gray-400 hover:text-white hover:bg-white/5 transition-colors no-drag select-none" style="touch-action: manipulation; -webkit-touch-callout: none; -webkit-user-select: none;">
+        <nav aria-label="Primary Navigation" class="p-3 space-y-1 select-none">
+            <button onclick="setTab('live')" id="nav-live" aria-label="Live TV" class="w-full flex items-center gap-3 px-3 py-2.5 rounded-lg text-sm font-semibold text-gray-400 hover:text-white hover:bg-white/5 transition-colors no-drag select-none" style="touch-action: manipulation; -webkit-touch-callout: none; -webkit-user-select: none;">
                 <i class="fa-solid fa-tv w-5 text-center text-blue-400 pointer-events-none"></i> <span class="pointer-events-none">TV Live</span>
             </button>
             <button onclick="setTab('series')" id="nav-series" class="w-full flex items-center gap-3 px-3 py-2.5 rounded-lg text-sm font-semibold text-gray-400 hover:text-white hover:bg-white/5 transition-colors no-drag select-none" style="touch-action: manipulation; -webkit-touch-callout: none; -webkit-user-select: none;">
@@ -72,66 +101,69 @@
         <div class="flex-1 flex flex-col overflow-hidden border-t border-white/5 mt-2">
             <div class="p-3 flex items-center gap-2">
                 <div class="relative w-full no-drag">
-                    <i class="fa-solid fa-filter absolute left-2.5 top-1/2 -translate-y-1/2 text-gray-500 text-xs"></i>
-                    <input type="text" id="category-filter-input" placeholder="Filter categories" oninput="renderSidebarCategories(this.value)" class="w-full bg-white/5 border border-transparent focus:border-white/20 rounded-md pl-8 pr-3 py-1.5 text-xs text-white outline-none transition-colors select-text">
+                    <i class="fa-solid fa-filter absolute left-2.5 top-1/2 -translate-y-1/2 text-gray-500 text-xs" aria-hidden="true"></i>
+                    <input type="text" id="category-filter-input" placeholder="Filter categories" aria-label="Filter categories" oninput="renderSidebarCategories(this.value)" class="w-full bg-white/5 border border-transparent focus:border-white/20 rounded-md pl-8 pr-3 py-1.5 text-xs text-white outline-none transition-colors select-text">
                 </div>
             </div>
-            <div class="flex-1 overflow-y-auto custom-scroll px-2 pb-4 space-y-0.5 select-none" id="category-list">
+            <div class="flex-1 overflow-y-auto custom-scroll px-2 pb-4 space-y-0.5 select-none" id="category-list" role="list" aria-label="Category list">
                 <!-- Injected via JS -->
             </div>
         </div>
 
-        <!-- Bottom Actions (Screen Share & Settings) -->
+        <!-- Bottom Actions (Screen Share, Shortcuts & Settings) -->
         <div class="p-3 border-t border-white/5 space-y-1 no-drag flex-shrink-0 select-none">
-            <button onclick="showCastInfo()" class="w-full flex items-center gap-3 px-3 py-2 rounded-lg text-sm font-semibold text-gray-400 hover:text-white hover:bg-white/5 transition-colors" style="touch-action: manipulation;">
-                <i class="fa-brands fa-chromecast w-5 text-center text-blue-400 pointer-events-none"></i> <span class="pointer-events-none">Cast / AirPlay</span>
+            <button onclick="toggleShortcutsModal()" id="btn-shortcuts" aria-label="Keyboard Shortcuts" class="w-full flex items-center gap-3 px-3 py-2 rounded-lg text-sm font-semibold text-gray-400 hover:text-white hover:bg-white/5 transition-colors" style="touch-action: manipulation;">
+                <i class="fa-solid fa-keyboard w-5 text-center text-yellow-400 pointer-events-none" aria-hidden="true"></i> <span class="pointer-events-none">Shortcuts (?)</span>
             </button>
-            <button onclick="openProfileModal()" class="w-full flex items-center gap-3 px-3 py-2 rounded-lg text-sm font-semibold text-gray-400 hover:text-white hover:bg-white/5 transition-colors" style="touch-action: manipulation;">
-                <i class="fa-solid fa-gear w-5 text-center pointer-events-none"></i> <span class="pointer-events-none">Settings & Sources</span>
+            <button onclick="showCastInfo()" id="btn-cast-sidebar" aria-label="Cast / AirPlay" class="w-full flex items-center gap-3 px-3 py-2 rounded-lg text-sm font-semibold text-gray-400 hover:text-white hover:bg-white/5 transition-colors" style="touch-action: manipulation;">
+                <i class="fa-brands fa-chromecast w-5 text-center text-blue-400 pointer-events-none" aria-hidden="true"></i> <span class="pointer-events-none">Cast / AirPlay</span>
+            </button>
+            <button onclick="openProfileModal()" id="btn-settings-sidebar" aria-label="Settings and Sources" class="w-full flex items-center gap-3 px-3 py-2 rounded-lg text-sm font-semibold text-gray-400 hover:text-white hover:bg-white/5 transition-colors" style="touch-action: manipulation;">
+                <i class="fa-solid fa-gear w-5 text-center pointer-events-none" aria-hidden="true"></i> <span class="pointer-events-none">Settings & Sources</span>
             </button>
             
             <!-- User Profile Mini -->
-            <div class="mt-2 flex items-center gap-3 px-3 py-2 bg-white/5 rounded-lg border border-white/10 cursor-pointer hover:bg-white/10 transition-colors" onclick="openProfileModal()" style="touch-action: manipulation;">
-                <div class="w-6 h-6 rounded-full bg-gradient-to-tr from-primary to-purple-600 flex items-center justify-center text-[10px] font-bold text-white shadow-inner" id="sidebar-avatar">U</div>
+            <div class="mt-2 flex items-center gap-3 px-3 py-2 bg-white/5 rounded-lg border border-white/10 cursor-pointer hover:bg-white/10 transition-colors" onclick="openProfileModal()" role="button" aria-label="User Profile and Settings" tabindex="0" onkeydown="if(event.key==='Enter'||event.key===' ')openProfileModal()" style="touch-action: manipulation;">
+                <div class="w-6 h-6 rounded-full bg-gradient-to-tr from-primary to-purple-600 flex items-center justify-center text-[10px] font-bold text-white shadow-inner" id="sidebar-avatar" aria-hidden="true">U</div>
                 <div class="flex-1 truncate">
-                    <div class="text-xs font-bold text-white truncate" id="sidebar-username">Guest User</div>
-                    <div class="text-[9px] text-green-400 uppercase tracking-wider font-bold" id="sidebar-user-status">Premium</div>
+                    <div class="text-xs font-bold text-white truncate" id="sidebar-username">Local Account</div>
+                    <div class="text-[9px] text-gray-400 uppercase tracking-wider font-semibold" id="sidebar-user-status">Ready</div>
                 </div>
             </div>
         </div>
     </aside>
 
     <!-- Mobile Sidebar Drawer Backdrop -->
-    <div id="sidebar-backdrop" onclick="toggleSidebar()" class="fixed inset-0 bg-black/60 backdrop-blur-sm z-40 hidden md:hidden transition-opacity duration-300"></div>
+    <div id="sidebar-backdrop" onclick="toggleSidebar()" class="fixed inset-0 bg-black/60 backdrop-blur-sm z-40 hidden md:hidden transition-opacity duration-300" aria-hidden="true"></div>
 
     <!-- Main Content Area -->
-    <main class="flex-1 flex flex-col bg-mainbg relative overflow-hidden h-full z-10 w-full pb-16 md:pb-0" id="main-content">
+    <main class="flex-1 flex flex-col bg-mainbg relative overflow-hidden h-full z-10 w-full pb-16 md:pb-0" id="main-content" tabindex="-1">
         <!-- Top Toolbar -->
-        <header class="h-16 flex-shrink-0 flex items-center justify-between px-4 md:px-8 border-b border-white/5 z-20 titlebar-drag">
+        <header role="banner" class="h-16 flex-shrink-0 flex items-center justify-between px-4 md:px-8 border-b border-white/5 z-20 titlebar-drag">
             <div class="flex items-center gap-4 no-drag w-full">
-                <button class="md:hidden text-gray-400 hover:text-white p-1" onclick="toggleSidebar()" style="touch-action: manipulation;" title="Open Menu"><i class="fa-solid fa-bars text-lg"></i></button>
+                <button class="md:hidden text-gray-400 hover:text-white p-1" onclick="toggleSidebar()" aria-label="Open navigation menu" style="touch-action: manipulation;" title="Open Menu"><i class="fa-solid fa-bars text-lg" aria-hidden="true"></i></button>
                 
-                <!-- Breadcrumb / Hub Title -->
-                <h2 class="text-lg md:text-xl font-bold text-white flex items-center gap-2 tracking-tight truncate flex-1 select-none" id="hub-title">
+                <!-- Main Header Title -->
+                <h1 class="text-lg md:text-xl font-bold text-white flex items-center gap-2 tracking-tight truncate flex-1 select-none" id="hub-title">
                     Movies
-                </h2>
+                </h1>
 
                 <!-- Sub-Navigation / Quick Sorts (Desktop Only) -->
-                <div class="hidden lg:flex items-center bg-black/50 border border-white/10 rounded-lg p-1 select-none" id="hub-sort-tabs">
-                    <button onclick="applySort('popular', this)" id="sort-popular" class="px-4 py-1 rounded-md text-xs font-bold text-white bg-white/10 shadow shadow-black/50 transition-colors">Popular</button>
-                    <button onclick="applySort('new', this)" id="sort-new" class="px-4 py-1 rounded-md text-xs font-bold text-gray-400 hover:text-white hover:bg-white/5 transition-colors">Latest</button>
-                    <button onclick="applySort('az', this)" id="sort-az" class="px-4 py-1 rounded-md text-xs font-bold text-gray-400 hover:text-white hover:bg-white/5 transition-colors">A-Z</button>
+                <div class="hidden lg:flex items-center bg-black/50 border border-white/10 rounded-lg p-1 select-none" id="hub-sort-tabs" role="toolbar" aria-label="Sort options">
+                    <button onclick="applySort('popular', this)" id="sort-popular" aria-label="Sort by popular" class="px-4 py-1 rounded-md text-xs font-bold text-white bg-white/10 shadow shadow-black/50 transition-colors">Popular</button>
+                    <button onclick="applySort('new', this)" id="sort-new" aria-label="Sort by latest" class="px-4 py-1 rounded-md text-xs font-bold text-gray-400 hover:text-white hover:bg-white/5 transition-colors">Latest</button>
+                    <button onclick="applySort('az', this)" id="sort-az" aria-label="Sort alphabetically" class="px-4 py-1 rounded-md text-xs font-bold text-gray-400 hover:text-white hover:bg-white/5 transition-colors">A-Z</button>
                 </div>
             </div>
         </header>
 
         <!-- Alphabet / Tag Filter Pills -->
-        <div class="px-4 md:px-8 py-2.5 flex items-center gap-2 overflow-x-auto hide-scroll border-b border-white/5 flex-shrink-0 bg-mainbg/80 backdrop-blur-md z-10 select-none touch-pan-x" id="filter-pills">
+        <div class="px-4 md:px-8 py-2.5 flex items-center gap-2 overflow-x-auto hide-scroll border-b border-white/5 flex-shrink-0 bg-mainbg/80 backdrop-blur-md z-10 select-none touch-pan-x" id="filter-pills" role="toolbar" aria-label="Media filters">
             <button onclick="applyFilterPill('all', this)" class="filter-pill px-3 py-1.5 bg-primary text-white text-xs font-bold rounded-lg flex-shrink-0 shadow-md shadow-primary/20 select-none">All</button>
             <button onclick="applyFilterPill('popular', this)" class="filter-pill px-3 py-1.5 bg-white/5 text-gray-300 hover:text-white hover:bg-white/10 text-xs font-semibold rounded-lg flex-shrink-0 transition-colors select-none">Popular</button>
             <button onclick="applyFilterPill('year', this)" class="filter-pill px-3 py-1.5 bg-white/5 text-gray-300 hover:text-white hover:bg-white/10 text-xs font-semibold rounded-lg flex-shrink-0 transition-colors select-none">Recent</button>
             <button onclick="applyFilterPill('4k', this)" class="filter-pill px-3 py-1.5 bg-white/5 text-gray-300 hover:text-white hover:bg-white/10 text-xs font-semibold rounded-lg flex-shrink-0 transition-colors select-none">4K / UHD</button>
-            <button onclick="applyFilterPill('top', this)" class="filter-pill px-3 py-1.5 bg-white/5 text-gray-300 hover:text-white hover:bg-white/10 text-xs font-semibold rounded-lg flex-shrink-0 transition-colors select-none">8.0+ <i class="fa-solid fa-star text-[10px] text-yellow-500"></i></button>
+            <button onclick="applyFilterPill('top', this)" class="filter-pill px-3 py-1.5 bg-white/5 text-gray-300 hover:text-white hover:bg-white/10 text-xs font-semibold rounded-lg flex-shrink-0 transition-colors select-none">8.0+ <i class="fa-solid fa-star text-[10px] text-yellow-500" aria-hidden="true"></i></button>
             <button onclick="applyFilterPill('az', this)" class="filter-pill px-3 py-1.5 bg-white/5 text-gray-300 hover:text-white hover:bg-white/10 text-xs font-semibold rounded-lg flex-shrink-0 transition-colors select-none">A-Z</button>
             <div class="hidden md:flex items-center gap-2 flex-shrink-0">
                 <div class="w-px h-4 bg-white/20 mx-1 flex-shrink-0"></div>
@@ -140,22 +172,22 @@
         </div>
 
         <!-- Grid Container -->
-        <div class="flex-1 overflow-y-auto custom-scroll p-4 md:p-8 relative" id="main-grid">
-            <div class="flex justify-center pt-32 w-full"><div class="animate-spin rounded-full h-10 w-10 border-b-2 border-primary"></div></div>
+        <div class="flex-1 overflow-y-auto custom-scroll p-4 md:p-8 relative" id="main-grid" role="region" aria-label="Media Grid">
+            <div class="flex justify-center pt-32 w-full"><div class="animate-spin rounded-full h-10 w-10 border-b-2 border-primary" aria-label="Loading content"></div></div>
         </div>
 
         <!-- Dedicated Multi-Tab Search View (In-Flow, Never Jump or Displace Nav) -->
-        <div id="search-view" class="flex-1 flex-col overflow-hidden hidden bg-mainbg w-full">
+        <div id="search-view" class="flex-1 flex-col overflow-hidden hidden bg-mainbg w-full" role="region" aria-label="Search Catalog">
             <div class="p-4 sm:p-6 border-b border-white/5 flex flex-col gap-4 sm:gap-6 flex-shrink-0">
                 <!-- Big Search Bar -->
                 <div class="relative w-full max-w-4xl mx-auto">
-                    <i class="fa-solid fa-search absolute left-4 top-1/2 -translate-y-1/2 text-gray-400 text-lg sm:text-xl"></i>
-                    <input type="text" id="global-search-input" placeholder="Search channels, movies, series...  (⌘K)" oninput="debouncedSearch(this.value)" class="w-full bg-panelbg border border-white/10 text-white rounded-xl pl-11 sm:pl-12 pr-11 sm:pr-12 py-3 sm:py-3.5 focus:outline-none focus:border-primary focus:ring-1 focus:ring-primary transition-all text-sm sm:text-base shadow-inner select-text">
-                    <button onclick="clearSearch()" class="absolute right-4 top-1/2 -translate-y-1/2 text-gray-500 hover:text-white text-lg"><i class="fa-solid fa-xmark"></i></button>
+                    <i class="fa-solid fa-search absolute left-4 top-1/2 -translate-y-1/2 text-gray-400 text-lg sm:text-xl" aria-hidden="true"></i>
+                    <input type="text" id="global-search-input" placeholder="Search channels, movies, series...  (⌘K or /)" aria-label="Search channels, movies, series" oninput="debouncedSearch(this.value)" class="w-full bg-panelbg border border-white/10 text-white rounded-xl pl-11 sm:pl-12 pr-11 sm:pr-12 py-3 sm:py-3.5 focus:outline-none focus:border-primary focus:ring-1 focus:ring-primary transition-all text-sm sm:text-base shadow-inner select-text">
+                    <button onclick="clearSearch()" aria-label="Clear search" class="absolute right-4 top-1/2 -translate-y-1/2 text-gray-500 hover:text-white text-lg"><i class="fa-solid fa-xmark" aria-hidden="true"></i></button>
                 </div>
                 
                 <!-- Search Tabs -->
-                <div class="flex items-center justify-center gap-2 overflow-x-auto hide-scroll select-none">
+                <div class="flex items-center justify-center gap-2 overflow-x-auto hide-scroll select-none" role="tablist" aria-label="Search categories">
                     <button onclick="setSearchFilter('all', this)" class="search-filter-tab px-4 sm:px-6 py-1.5 sm:py-2 bg-primary text-white text-xs sm:text-sm font-bold rounded-full shadow-lg shadow-primary/20 flex-shrink-0">All</button>
                     <button onclick="setSearchFilter('live', this)" class="search-filter-tab px-4 sm:px-6 py-1.5 sm:py-2 bg-panelbg text-gray-400 hover:text-white text-xs sm:text-sm font-bold rounded-full transition-colors border border-white/5 hover:border-white/20 flex-shrink-0">TV Live</button>
                     <button onclick="setSearchFilter('vod', this)" class="search-filter-tab px-4 sm:px-6 py-1.5 sm:py-2 bg-panelbg text-gray-400 hover:text-white text-xs sm:text-sm font-bold rounded-full transition-colors border border-white/5 hover:border-white/20 flex-shrink-0">Movies</button>
@@ -164,23 +196,23 @@
             </div>
             <div id="search-results-grid" class="flex-1 overflow-y-auto custom-scroll p-4 sm:p-6 grid grid-cols-2 sm:grid-cols-3 md:grid-cols-4 lg:grid-cols-5 xl:grid-cols-7 gap-4 md:gap-6 content-start w-full">
                 <div class="col-span-full flex flex-col items-center justify-center pt-32 text-gray-600 w-full">
-                    <i class="fa-solid fa-keyboard text-5xl mb-4 opacity-50"></i>
+                    <i class="fa-solid fa-keyboard text-5xl mb-4 opacity-50" aria-hidden="true"></i>
                     <p class="font-medium text-base sm:text-lg">Start typing to search...</p>
                 </div>
             </div>
         </div>
 
         <!-- Advanced Hero Detail Overlay -->
-        <div id="detail-overlay" class="absolute inset-0 bg-mainbg z-40 hidden flex-col overflow-y-auto custom-scroll transform translate-y-full" style="transition: transform 0.5s cubic-bezier(0.2, 0.8, 0.2, 1);">
+        <div id="detail-overlay" class="absolute inset-0 bg-mainbg z-40 hidden flex-col overflow-y-auto custom-scroll transform translate-y-full" style="transition: transform 0.5s cubic-bezier(0.2, 0.8, 0.2, 1);" role="dialog" aria-modal="true" aria-labelledby="detail-title">
             
             <!-- Close Header -->
             <div class="fixed top-0 w-full pt-4 sm:pt-7 pb-4 pl-4 sm:pl-24 md:pl-28 pr-4 sm:pr-10 z-50 flex justify-between items-center bg-gradient-to-b from-black/85 via-black/40 to-transparent pointer-events-none no-drag">
-                <button onclick="closeDetailView()" class="w-11 h-11 rounded-full bg-black/60 backdrop-blur-md border border-white/20 text-white flex items-center justify-center hover:bg-white hover:text-black transition-all duration-200 pointer-events-auto shadow-xl hover:scale-105 active:scale-95 group focus:outline-none" title="Back to Browse (Esc / Backspace)">
-                    <i class="fa-solid fa-arrow-left text-lg group-hover:-translate-x-0.5 transition-transform"></i>
+                <button onclick="closeDetailView()" aria-label="Back to browse" class="w-11 h-11 rounded-full bg-black/60 backdrop-blur-md border border-white/20 text-white flex items-center justify-center hover:bg-white hover:text-black transition-all duration-200 pointer-events-auto shadow-xl hover:scale-105 active:scale-95 group focus:outline-none" title="Back to Browse (Esc / Backspace)">
+                    <i class="fa-solid fa-arrow-left text-lg group-hover:-translate-x-0.5 transition-transform" aria-hidden="true"></i>
                 </button>
                 <div class="flex gap-3 pointer-events-auto">
-                    <button id="detail-fav-btn" class="w-11 h-11 rounded-full bg-black/60 backdrop-blur-md border border-white/20 text-white flex items-center justify-center hover:text-primary transition-all duration-200 shadow-xl hover:scale-105 active:scale-95" title="Toggle Favorite"><i class="fa-regular fa-heart text-lg"></i></button>
-                    <button onclick="showCastInfo()" class="w-11 h-11 rounded-full bg-black/60 backdrop-blur-md border border-white/20 text-white flex items-center justify-center hover:text-primary transition-all duration-200 shadow-xl hover:scale-105 active:scale-95" title="Cast"><i class="fa-brands fa-chromecast text-lg"></i></button>
+                    <button id="detail-fav-btn" aria-label="Toggle favorite" class="w-11 h-11 rounded-full bg-black/60 backdrop-blur-md border border-white/20 text-white flex items-center justify-center hover:text-primary transition-all duration-200 shadow-xl hover:scale-105 active:scale-95" title="Toggle Favorite"><i class="fa-regular fa-heart text-lg" aria-hidden="true"></i></button>
+                    <button onclick="showCastInfo()" aria-label="Cast to TV" class="w-11 h-11 rounded-full bg-black/60 backdrop-blur-md border border-white/20 text-white flex items-center justify-center hover:text-primary transition-all duration-200 shadow-xl hover:scale-105 active:scale-95" title="Cast"><i class="fa-brands fa-chromecast text-lg" aria-hidden="true"></i></button>
                 </div>
             </div>
 
@@ -193,24 +225,21 @@
                 <!-- Hero Content -->
                 <div class="absolute bottom-0 left-0 w-full md:w-2/3 p-6 md:p-12 z-10">
                     <div class="flex items-center gap-3 text-xs md:text-sm font-bold text-gray-300 mb-4 select-none">
-                        <span id="detail-rating" class="text-green-400 bg-green-400/10 px-2 py-0.5 rounded border border-green-400/20">8.0 ★</span>
+                        <span id="detail-rating" class="hidden text-green-400 bg-green-400/10 px-2 py-0.5 rounded border border-green-400/20"></span>
                         <span id="detail-year" class="hidden"></span>
-                        <span class="border border-gray-500 px-1.5 py-0.5 rounded text-[10px] uppercase">4K HDR</span>
-                        <span id="detail-type" class="bg-white/10 px-2 py-0.5 rounded text-white">Movie</span>
+                        <span id="detail-resolution-badge" class="hidden border border-gray-500 px-1.5 py-0.5 rounded text-[10px] uppercase">4K HDR</span>
+                        <span id="detail-type" class="hidden bg-white/10 px-2 py-0.5 rounded text-white"></span>
                     </div>
                     
-                    <h1 id="detail-title" class="text-4xl md:text-6xl lg:text-7xl font-black text-white tracking-tighter mb-6 drop-shadow-2xl leading-tight">Title</h1>
+                    <h2 id="detail-title" class="text-4xl md:text-6xl lg:text-7xl font-black text-white tracking-tighter mb-6 drop-shadow-2xl leading-tight"></h2>
                     
                     <div class="flex flex-wrap gap-4 mb-6">
-                        <button id="detail-play-btn" class="bg-primary hover:bg-red-700 text-white px-8 py-3 rounded-md font-bold text-base shadow-[0_0_20px_rgba(229,9,20,0.4)] hover:-translate-y-1 transition-all flex items-center gap-3">
-                            <i class="fa-solid fa-play"></i> <span id="detail-play-text">Watch</span>
-                        </button>
-                        <button onclick="showToast('Trailers available via search')" class="bg-white/10 hover:bg-white/20 text-white border border-white/20 px-6 py-3 rounded-md font-bold text-base backdrop-blur-md transition-all flex items-center gap-3">
-                            <i class="fa-solid fa-film"></i> Info
+                        <button id="detail-play-btn" aria-label="Watch video" class="bg-primary hover:bg-red-700 text-white px-8 py-3 rounded-md font-bold text-base shadow-[0_0_20px_rgba(229,9,20,0.4)] hover:-translate-y-1 transition-all flex items-center gap-3">
+                            <i class="fa-solid fa-play" aria-hidden="true"></i> <span id="detail-play-text">Watch</span>
                         </button>
                     </div>
 
-                    <p id="detail-desc" class="text-sm md:text-base text-gray-300 leading-relaxed max-w-3xl font-medium line-clamp-3 md:line-clamp-none drop-shadow">Description goes here.</p>
+                    <p id="detail-desc" class="text-sm md:text-base text-gray-300 leading-relaxed max-w-3xl font-medium line-clamp-3 md:line-clamp-none drop-shadow"></p>
                 </div>
             </div>
 
@@ -227,7 +256,7 @@
 
                     <!-- Episodes Grid -->
                     <div class="mb-4 flex items-center justify-between">
-                        <span class="text-xs text-gray-400 font-semibold uppercase tracking-wider" id="ep-count-badge">0 Episodes</span>
+                        <span class="text-xs text-gray-400 font-semibold uppercase tracking-wider hidden" id="ep-count-badge"></span>
                     </div>
                     
                     <div id="episodes-grid" class="grid grid-cols-2 md:grid-cols-3 lg:grid-cols-4 xl:grid-cols-5 gap-4">
@@ -354,32 +383,32 @@
             <!-- Top Bar -->
             <div class="pt-4 sm:pt-7 pb-4 pl-4 sm:pl-24 md:pl-28 pr-4 sm:pr-10 flex justify-between items-start bg-gradient-to-b from-black/90 via-black/50 to-transparent pointer-events-auto no-drag">
                 <div class="flex items-center gap-3 sm:gap-5 min-w-0">
-                    <button id="player-back-btn" onclick="closePlayer()" class="no-drag w-10 h-10 sm:w-11 sm:h-11 rounded-full bg-black/60 hover:bg-white hover:text-black border border-white/20 text-white flex items-center justify-center transition-all duration-200 shadow-xl active:scale-95 cursor-pointer z-50 pointer-events-auto group focus:outline-none flex-shrink-0" title="Back to Browse (Esc / Backspace)">
-                        <i class="fa-solid fa-arrow-left text-base sm:text-lg group-hover:-translate-x-0.5 transition-transform"></i>
+                    <button id="player-back-btn" onclick="closePlayer()" aria-label="Back to Browse (Esc or Backspace)" class="no-drag w-10 h-10 sm:w-11 sm:h-11 rounded-full bg-black/60 hover:bg-white hover:text-black border border-white/20 text-white flex items-center justify-center transition-all duration-200 shadow-xl active:scale-95 cursor-pointer z-50 pointer-events-auto group focus:outline-none flex-shrink-0" title="Back to Browse (Esc / Backspace)">
+                        <i class="fa-solid fa-arrow-left text-base sm:text-lg group-hover:-translate-x-0.5 transition-transform" aria-hidden="true"></i>
                     </button>
                     <div class="select-none flex flex-col min-w-0">
                         <div class="flex items-center gap-2">
-                            <span class="text-[9px] sm:text-[10px] uppercase font-bold tracking-widest text-primary/90 flex items-center gap-1.5"><i class="fa-solid fa-circle text-[5px] sm:text-[6px] animate-pulse"></i> Now Playing</span>
+                            <span class="text-[9px] sm:text-[10px] uppercase font-bold tracking-widest text-primary/90 flex items-center gap-1.5"><i class="fa-solid fa-circle text-[5px] sm:text-[6px] animate-pulse" aria-hidden="true"></i> Now Playing</span>
                             <span id="stream-quality-badge" class="hidden px-1.5 sm:px-2 py-0.5 rounded text-[9px] sm:text-[10px] font-black tracking-wider uppercase border flex items-center gap-1 shadow-sm">
-                                <i class="fa-solid fa-bolt text-[8px]"></i> <span id="stream-quality-text">1080p FHD</span>
+                                <i class="fa-solid fa-bolt text-[8px]" aria-hidden="true"></i> <span id="stream-quality-text">1080p FHD</span>
                             </span>
                         </div>
-                        <h2 id="player-main-title" class="text-white font-bold text-sm sm:text-base md:text-lg drop-shadow-md truncate max-w-[180px] sm:max-w-md">Video Title</h2>
-                        <span id="player-sub-title" class="text-xs text-gray-300 font-semibold drop-shadow hidden">S01E01</span>
+                        <h2 id="player-main-title" class="text-white font-bold text-sm sm:text-base md:text-lg drop-shadow-md truncate max-w-[180px] sm:max-w-md"></h2>
+                        <span id="player-sub-title" class="text-xs text-gray-300 font-semibold drop-shadow hidden"></span>
                     </div>
                 </div>
                 <div class="flex items-center gap-2 sm:gap-4 pointer-events-auto flex-shrink-0">
-                    <button id="btn-drawer" onclick="togglePlayerDrawer()" class="hidden bg-black/60 hover:bg-black text-white border border-white/20 px-3 sm:px-4 py-1.5 sm:py-2 rounded-xl text-xs font-bold transition-all backdrop-blur-md shadow-lg flex items-center gap-1.5 active:scale-95">
-                        <i class="fa-solid fa-list-ul text-primary"></i> <span id="btn-drawer-label" class="hidden sm:inline">Channels</span>
+                    <button id="btn-drawer" onclick="togglePlayerDrawer()" aria-label="Open channels and episodes drawer" class="hidden bg-black/60 hover:bg-black text-white border border-white/20 px-3 sm:px-4 py-1.5 sm:py-2 rounded-xl text-xs font-bold transition-all backdrop-blur-md shadow-lg flex items-center gap-1.5 active:scale-95">
+                        <i class="fa-solid fa-list-ul text-primary" aria-hidden="true"></i> <span id="btn-drawer-label" class="hidden sm:inline">Channels</span>
                     </button>
                     <!-- Error Box -->
-                    <div id="player-error" class="hidden bg-panelbg/95 border border-red-500/50 text-white px-3 sm:px-4 py-2 sm:py-3 rounded-lg text-xs md:text-sm max-w-sm text-left shadow-2xl backdrop-blur-xl">
-                        <p class="font-bold text-red-400 mb-1 flex items-center gap-2"><i class="fa-solid fa-triangle-exclamation"></i> Playback Issue</p>
-                        <p class="text-gray-300 mb-2 leading-tight">Stream codec or connection temporarily unresponsive.</p>
-                        <div class="flex gap-2">
-                            <button onclick="retryCurrentStream()" class="flex-1 bg-primary hover:bg-red-700 text-white px-3 py-1.5 rounded font-bold transition-colors text-[10px] uppercase tracking-wider">Retry</button>
-                            <a id="vlc-download" href="#" download class="flex-1 bg-white/10 hover:bg-white/20 border border-white/10 text-white px-3 py-1.5 rounded font-bold transition-colors text-[10px] uppercase tracking-wider text-center">VLC M3U</a>
-                            <button onclick="copyCurrentStreamUrl()" class="flex-1 bg-white/10 hover:bg-white/20 border border-white/10 text-white px-3 py-1.5 rounded font-bold transition-colors text-[10px] uppercase tracking-wider">Copy URL</button>
+                    <div id="player-error" class="hidden bg-panelbg/95 border border-red-500/50 text-white px-3 sm:px-4 py-2 sm:py-3 rounded-lg text-xs md:text-sm max-w-sm text-left shadow-2xl backdrop-blur-xl" role="alert">
+                        <p class="font-bold text-red-400 mb-1 flex items-center gap-2"><i class="fa-solid fa-triangle-exclamation" aria-hidden="true"></i> <span id="player-error-title">Playback Issue</span></p>
+                        <p id="player-error-desc" class="text-gray-300 mb-2 leading-tight">Stream codec or connection temporarily unresponsive.</p>
+                        <div class="flex flex-wrap gap-2">
+                            <button onclick="retryCurrentStream()" aria-label="Retry stream playback" class="flex-1 bg-primary hover:bg-red-700 text-white px-3 py-1.5 rounded font-bold transition-colors text-[10px] uppercase tracking-wider">Retry</button>
+                            <a id="vlc-download" href="#" download aria-label="Download VLC M3U file" class="flex-1 bg-white/10 hover:bg-white/20 border border-white/10 text-white px-3 py-1.5 rounded font-bold transition-colors text-[10px] uppercase tracking-wider text-center">VLC M3U</a>
+                            <button onclick="copyCurrentStreamUrl()" aria-label="Copy stream URL" class="flex-1 bg-white/10 hover:bg-white/20 border border-white/10 text-white px-3 py-1.5 rounded font-bold transition-colors text-[10px] uppercase tracking-wider">Copy URL</button>
                         </div>
                     </div>
                 </div>
@@ -389,75 +418,80 @@
             <div class="p-3 sm:p-6 md:px-10 player-gradient w-full pb-safe pointer-events-auto">
                 <div id="seek-bar-container" class="flex items-center gap-2.5 sm:gap-4 mb-2.5 sm:mb-4">
                     <span id="time-current" class="text-white text-[10px] sm:text-[11px] font-bold w-10 sm:w-12 text-right opacity-80 font-mono">0:00</span>
-                    <input type="range" id="seek-bar" value="0" class="w-full flex-grow py-2">
+                    <input type="range" id="seek-bar" value="0" aria-label="Seek time" class="w-full flex-grow py-2">
                     <span id="time-total" class="text-white text-[10px] sm:text-[11px] font-bold w-10 sm:w-12 opacity-80 font-mono">0:00</span>
                 </div>
                 
                 <div class="flex items-center justify-between gap-1 sm:gap-4">
                     <div class="flex items-center gap-2 sm:gap-4 md:gap-6">
-                        <button id="play-pause-btn" class="text-white hover:text-primary transition-transform active:scale-90 w-10 h-10 sm:w-12 sm:h-12 flex items-center justify-center rounded-full bg-white/10 sm:bg-transparent" title="Play / Pause (Space)">
-                            <i class="fa-solid fa-play text-lg sm:text-2xl md:text-3xl ml-0.5"></i>
+                        <button id="play-pause-btn" aria-label="Play or pause (Space)" class="text-white hover:text-primary transition-transform active:scale-90 w-10 h-10 sm:w-12 sm:h-12 flex items-center justify-center rounded-full bg-white/10 sm:bg-transparent" title="Play / Pause (Space)">
+                            <i class="fa-solid fa-play text-lg sm:text-2xl md:text-3xl ml-0.5" aria-hidden="true"></i>
                         </button>
 
                         <!-- Jump to Live Edge Button (For Live TV content) -->
-                        <button id="btn-go-live" onclick="goToLiveEdge()" class="hidden items-center gap-1.5 px-3 py-1.5 rounded-full bg-red-600 hover:bg-red-700 active:bg-red-800 text-white font-black text-xs uppercase tracking-wider shadow-[0_0_12px_rgba(229,9,20,0.6)] active:scale-95 transition-all cursor-pointer select-none" title="Jump to Live broadcast">
-                            <i class="fa-solid fa-circle text-[7px] text-white animate-pulse"></i>
+                        <button id="btn-go-live" onclick="goToLiveEdge()" aria-label="Jump to Live edge" class="hidden items-center gap-1.5 px-3 py-1.5 rounded-full bg-red-600 hover:bg-red-700 active:bg-red-800 text-white font-black text-xs uppercase tracking-wider shadow-[0_0_12px_rgba(229,9,20,0.6)] active:scale-95 transition-all cursor-pointer select-none" title="Jump to Live broadcast">
+                            <i class="fa-solid fa-circle text-[7px] text-white animate-pulse" aria-hidden="true"></i>
                             <span>LIVE</span>
                         </button>
                         
                         <!-- Rewind 10s (VOD & Series only) -->
-                        <button id="rewind-btn" class="text-white hover:text-primary transition-all active:scale-90 flex items-center justify-center w-9 h-9 sm:w-10 sm:h-10 rounded-full bg-white/10 sm:bg-transparent" title="Rewind 10s (Left Arrow)">
+                        <button id="rewind-btn" aria-label="Rewind 10 seconds" class="text-white hover:text-primary transition-all active:scale-90 flex items-center justify-center w-9 h-9 sm:w-10 sm:h-10 rounded-full bg-white/10 sm:bg-transparent" title="Rewind 10s (Left Arrow)">
                             <div class="flex flex-col items-center">
-                                <i class="fa-solid fa-rotate-left text-sm sm:text-base md:text-lg"></i>
+                                <i class="fa-solid fa-rotate-left text-sm sm:text-base md:text-lg" aria-hidden="true"></i>
                                 <span class="text-[7px] sm:text-[8px] font-bold leading-none mt-0.5 sm:hidden font-mono">10</span>
                             </div>
                         </button>
 
                         <!-- Forward 10s (VOD & Series only) -->
-                        <button id="forward-btn" class="text-white hover:text-primary transition-all active:scale-90 flex items-center justify-center w-9 h-9 sm:w-10 sm:h-10 rounded-full bg-white/10 sm:bg-transparent" title="Forward 10s (Right Arrow)">
+                        <button id="forward-btn" aria-label="Fast forward 10 seconds" class="text-white hover:text-primary transition-all active:scale-90 flex items-center justify-center w-9 h-9 sm:w-10 sm:h-10 rounded-full bg-white/10 sm:bg-transparent" title="Forward 10s (Right Arrow)">
                             <div class="flex flex-col items-center">
-                                <i class="fa-solid fa-rotate-right text-sm sm:text-base md:text-lg"></i>
+                                <i class="fa-solid fa-rotate-right text-sm sm:text-base md:text-lg" aria-hidden="true"></i>
                                 <span class="text-[7px] sm:text-[8px] font-bold leading-none mt-0.5 sm:hidden font-mono">10</span>
                             </div>
                         </button>
                         
                         <!-- Volume Slider (Fully responsive on mobile & desktop) -->
                         <div id="volume-container" class="flex items-center gap-1.5 sm:gap-2.5 bg-black/40 hover:bg-black/70 backdrop-blur-md px-2.5 sm:px-3 py-1.5 rounded-full border border-white/10 hover:border-white/25 transition-all shadow-lg group ml-0.5 sm:ml-1 select-none" title="Volume">
-                            <button id="mute-btn" class="text-white hover:text-primary transition-colors flex items-center justify-center w-6 h-6 focus:outline-none" title="Mute / Unmute (M)">
-                                <i class="fa-solid fa-volume-high text-sm"></i>
+                            <button id="mute-btn" aria-label="Mute or unmute (M)" class="text-white hover:text-primary transition-colors flex items-center justify-center w-6 h-6 focus:outline-none" title="Mute / Unmute (M)">
+                                <i class="fa-solid fa-volume-high text-sm" aria-hidden="true"></i>
                             </button>
-                            <input type="range" id="volume-bar" min="0" max="1" step="0.02" value="1" class="w-16 sm:w-20 md:w-24 cursor-pointer accent-primary transition-all">
+                            <input type="range" id="volume-bar" min="0" max="1" step="0.02" value="1" aria-label="Volume slider" class="w-16 sm:w-20 md:w-24 cursor-pointer accent-primary transition-all">
                             <span id="volume-pct" class="text-[11px] font-bold text-gray-300 font-mono w-7 text-right select-none hidden sm:inline">100%</span>
                         </div>
                     </div>
                     
                     <div class="flex items-center gap-1 sm:gap-2.5 md:gap-4">
-                        <button id="btn-prev-channel" onclick="changeChannel(-1)" class="hidden text-white hover:text-primary font-bold text-xs bg-white/10 hover:bg-white/20 px-2 sm:px-3 py-1.5 rounded-lg items-center gap-1 transition-colors active:scale-95" title="Previous Channel">
-                            <i class="fa-solid fa-chevron-left"></i> <span class="hidden sm:inline">Prev</span>
+                        <button id="btn-prev-channel" onclick="changeChannel(-1)" aria-label="Previous channel" class="hidden text-white hover:text-primary font-bold text-xs bg-white/10 hover:bg-white/20 px-2 sm:px-3 py-1.5 rounded-lg items-center gap-1 transition-colors active:scale-95" title="Previous Channel">
+                            <i class="fa-solid fa-chevron-left" aria-hidden="true"></i> <span class="hidden sm:inline">Prev</span>
                         </button>
-                        <button id="btn-next-channel" onclick="changeChannel(1)" class="hidden text-white hover:text-primary font-bold text-xs bg-white/10 hover:bg-white/20 px-2 sm:px-3 py-1.5 rounded-lg items-center gap-1 transition-colors active:scale-95" title="Next Channel">
-                            <span class="hidden sm:inline">Next</span> <i class="fa-solid fa-chevron-right"></i>
+                        <button id="btn-next-channel" onclick="changeChannel(1)" aria-label="Next channel" class="hidden text-white hover:text-primary font-bold text-xs bg-white/10 hover:bg-white/20 px-2 sm:px-3 py-1.5 rounded-lg items-center gap-1 transition-colors active:scale-95" title="Next Channel">
+                            <span class="hidden sm:inline">Next</span> <i class="fa-solid fa-chevron-right" aria-hidden="true"></i>
                         </button>
-                        <button id="btn-next-ep" onclick="changeChannel(1)" class="hidden text-white hover:text-primary font-bold text-xs bg-white/10 hover:bg-white/20 px-2 sm:px-3 py-1.5 rounded-lg items-center gap-1.5 transition-colors active:scale-95" title="Next Episode">
-                            <span class="hidden sm:inline">Next Ep</span> <i class="fa-solid fa-forward-step"></i>
+                        <button id="btn-next-ep" onclick="changeChannel(1)" aria-label="Next episode" class="hidden text-white hover:text-primary font-bold text-xs bg-white/10 hover:bg-white/20 px-2 sm:px-3 py-1.5 rounded-lg items-center gap-1.5 transition-colors active:scale-95" title="Next Episode">
+                            <span class="hidden sm:inline">Next Ep</span> <i class="fa-solid fa-forward-step" aria-hidden="true"></i>
                         </button>
                         
-                        <!-- Quality Selector Pill Button -->
-                        <button id="btn-quality" onclick="toggleQualityModal()" class="text-gray-300 hover:text-white transition-all bg-white/10 hover:bg-white/20 px-2 sm:px-2.5 py-1.5 rounded-lg flex items-center gap-1 font-bold text-[10px] sm:text-xs border border-white/10 active:scale-95" title="Stream Resolution & Bitrate">
-                            <i class="fa-solid fa-sliders text-primary text-xs"></i> <span id="btn-quality-label">AUTO</span>
+                        <!-- Aspect Ratio Switcher -->
+                        <button id="btn-aspect" onclick="cycleAspectRatio()" aria-label="Cycle aspect ratio mode" class="text-gray-300 hover:text-white transition-all bg-white/10 hover:bg-white/20 px-2 sm:px-2.5 py-1.5 rounded-lg flex items-center gap-1 font-bold text-[10px] sm:text-xs border border-white/10 active:scale-95" title="Aspect Ratio (Fit/Fill/16:9/4:3)">
+                            <i class="fa-solid fa-crop-simple text-xs" aria-hidden="true"></i> <span id="btn-aspect-label">FIT</span>
                         </button>
 
-                        <button onclick="toggleSubtitlesModal()" class="text-gray-300 hover:text-white transition-colors tooltip p-2 active:scale-95" title="Audio & Subtitles">
-                            <i class="fa-solid fa-closed-captioning text-base sm:text-lg"></i>
+                        <!-- Quality Selector Pill Button -->
+                        <button id="btn-quality" onclick="toggleQualityModal()" aria-label="Select stream quality" class="text-gray-300 hover:text-white transition-all bg-white/10 hover:bg-white/20 px-2 sm:px-2.5 py-1.5 rounded-lg flex items-center gap-1 font-bold text-[10px] sm:text-xs border border-white/10 active:scale-95" title="Stream Resolution & Bitrate">
+                            <i class="fa-solid fa-sliders text-primary text-xs" aria-hidden="true"></i> <span id="btn-quality-label">AUTO</span>
                         </button>
-                        <button id="pip-btn" onclick="togglePiP()" class="text-gray-300 hover:text-white transition-colors tooltip p-2 hidden sm:block active:scale-95" title="Picture in Picture (P)">
-                            <i class="fa-solid fa-clone text-base sm:text-lg"></i>
+
+                        <button onclick="toggleSubtitlesModal()" aria-label="Audio and subtitles" class="text-gray-300 hover:text-white transition-colors tooltip p-2 active:scale-95" title="Audio & Subtitles">
+                            <i class="fa-solid fa-closed-captioning text-base sm:text-lg" aria-hidden="true"></i>
                         </button>
-                        <button onclick="showCastInfo()" class="text-gray-300 hover:text-white transition-colors tooltip p-2 hidden sm:block active:scale-95" title="Cast to TV">
-                            <i class="fa-brands fa-chromecast text-base sm:text-lg"></i>
+                        <button id="pip-btn" onclick="togglePiP()" aria-label="Picture in picture (P)" class="text-gray-300 hover:text-white transition-colors tooltip p-2 hidden sm:block active:scale-95" title="Picture in Picture (P)">
+                            <i class="fa-solid fa-clone text-base sm:text-lg" aria-hidden="true"></i>
                         </button>
-                        <button id="fullscreen-btn" class="text-gray-300 hover:text-white transition-colors tooltip p-2 active:scale-95" title="Fullscreen">
-                            <i class="fa-solid fa-expand text-base sm:text-lg"></i>
+                        <button id="btn-cast-player" onclick="showCastInfo()" aria-label="Cast to TV" class="text-gray-300 hover:text-white transition-colors tooltip p-2 hidden sm:block active:scale-95" title="Cast to TV">
+                            <i class="fa-brands fa-chromecast text-base sm:text-lg" aria-hidden="true"></i>
+                        </button>
+                        <button id="fullscreen-btn" aria-label="Toggle fullscreen (F)" class="text-gray-300 hover:text-white transition-colors tooltip p-2 active:scale-95" title="Fullscreen (F)">
+                            <i class="fa-solid fa-expand text-base sm:text-lg" aria-hidden="true"></i>
                         </button>
                     </div>
                 </div>
@@ -466,68 +500,133 @@
     </div>
 
     <!-- Source / Profile Management Modal -->
-    <div id="profile-modal" class="fixed inset-0 z-[600] hidden flex justify-center items-center bg-black/80 backdrop-blur-sm transition-opacity duration-300 opacity-0 px-4 select-text">
-        <div class="no-drag bg-panelbg w-full max-w-lg rounded-2xl shadow-2xl relative border border-white/10 p-1 transform transition-all duration-300 scale-95 opacity-0 flex flex-col select-text" id="profile-content" style="-webkit-app-region: no-drag;">
+    <div id="profile-modal" class="fixed inset-0 z-[600] hidden flex justify-center items-center bg-black/80 backdrop-blur-sm transition-opacity duration-300 opacity-0 px-4 select-text" role="dialog" aria-modal="true" aria-labelledby="modal-sources-title">
+        <div class="no-drag bg-panelbg w-full max-w-xl rounded-2xl shadow-2xl relative border border-white/10 p-1 transform transition-all duration-300 scale-95 opacity-0 flex flex-col select-text" id="profile-content" style="-webkit-app-region: no-drag;">
             
             <div class="flex items-center justify-between p-5 border-b border-white/5">
-                <h2 class="text-xl font-bold text-white flex items-center gap-3"><i class="fa-solid fa-satellite-dish text-primary"></i> Streaming Sources</h2>
-                <button onclick="closeProfileModal()" class="w-8 h-8 rounded-full bg-white/5 hover:bg-white/10 text-gray-400 hover:text-white flex items-center justify-center transition-colors"><i class="fa-solid fa-xmark"></i></button>
+                <h2 id="modal-sources-title" class="text-xl font-bold text-white flex items-center gap-3"><i class="fa-solid fa-satellite-dish text-primary" aria-hidden="true"></i> Sources &amp; Settings</h2>
+                <button onclick="closeProfileModal()" aria-label="Close settings modal" class="w-8 h-8 rounded-full bg-white/5 hover:bg-white/10 text-gray-400 hover:text-white flex items-center justify-center transition-colors"><i class="fa-solid fa-xmark" aria-hidden="true"></i></button>
             </div>
 
             <!-- Tabs -->
-            <div class="flex px-5 pt-4 border-b border-white/5 gap-6 text-sm font-bold">
-                <button class="pb-3 border-b-2 border-primary text-primary">Xtream Codes API</button>
-                <button class="pb-3 border-b-2 border-transparent text-gray-500 hover:text-gray-300 cursor-not-allowed">M3U Playlist</button>
-                <button class="pb-3 border-b-2 border-transparent text-gray-500 hover:text-gray-300 cursor-not-allowed">Local Device</button>
+            <div class="flex px-5 pt-4 border-b border-white/5 gap-4 text-xs sm:text-sm font-bold overflow-x-auto hide-scroll" role="tablist">
+                <button onclick="switchSourceTab('xc')" id="tab-btn-xc" role="tab" aria-selected="true" class="pb-3 border-b-2 border-primary text-primary flex-shrink-0">Xtream Codes</button>
+                <button onclick="switchSourceTab('m3u')" id="tab-btn-m3u" role="tab" aria-selected="false" class="pb-3 border-b-2 border-transparent text-gray-400 hover:text-white transition-colors flex-shrink-0">M3U Playlist</button>
+                <button onclick="switchSourceTab('file')" id="tab-btn-file" role="tab" aria-selected="false" class="pb-3 border-b-2 border-transparent text-gray-400 hover:text-white transition-colors flex-shrink-0">Local File / EPG</button>
+                <button onclick="switchSourceTab('privacy')" id="tab-btn-privacy" role="tab" aria-selected="false" class="pb-3 border-b-2 border-transparent text-gray-400 hover:text-white transition-colors flex-shrink-0">Privacy &amp; Data</button>
             </div>
             
-            <div class="p-6 space-y-5">
-                <div class="space-y-4 bg-black/30 p-5 rounded-xl border border-white/5">
-                    <div>
-                        <label class="block text-[10px] font-black text-gray-500 uppercase tracking-widest mb-1.5 ml-1">Server URL</label>
-                        <div class="relative">
-                            <i class="fa-solid fa-link absolute left-3 top-1/2 -translate-y-1/2 text-gray-500 pointer-events-none"></i>
-                            <input type="text" id="prof-server" placeholder="http://domain.com:port" autocomplete="off" spellcheck="false" class="no-drag select-text w-full bg-[#111] border border-white/10 rounded-lg pl-10 pr-4 py-2.5 text-white text-sm focus:border-primary focus:ring-1 focus:ring-primary outline-none transition-all cursor-text" style="-webkit-app-region: no-drag; -webkit-user-select: text; user-select: text;">
+            <div class="p-5 sm:p-6 space-y-4 max-h-[65vh] overflow-y-auto custom-scroll">
+                <!-- Panel 1: Xtream Codes -->
+                <div id="panel-source-xc" class="space-y-4">
+                    <div class="space-y-4 bg-black/30 p-4 sm:p-5 rounded-xl border border-white/5">
+                        <div>
+                            <label for="prof-server" class="block text-[10px] font-black text-gray-400 uppercase tracking-widest mb-1.5 ml-1">Server URL</label>
+                            <div class="relative">
+                                <i class="fa-solid fa-link absolute left-3 top-1/2 -translate-y-1/2 text-gray-500 pointer-events-none" aria-hidden="true"></i>
+                                <input type="text" id="prof-server" placeholder="http://domain.com:port" autocomplete="off" spellcheck="false" class="no-drag select-text w-full bg-[#111] border border-white/10 rounded-lg pl-10 pr-4 py-2.5 text-white text-sm focus:border-primary focus:ring-1 focus:ring-primary outline-none transition-all cursor-text">
+                            </div>
+                        </div>
+                        <div class="grid grid-cols-1 sm:grid-cols-2 gap-4">
+                            <div>
+                                <label for="prof-user" class="block text-[10px] font-black text-gray-400 uppercase tracking-widest mb-1.5 ml-1">Username</label>
+                                <div class="relative">
+                                    <i class="fa-regular fa-user absolute left-3 top-1/2 -translate-y-1/2 text-gray-500 pointer-events-none" aria-hidden="true"></i>
+                                    <input type="text" id="prof-user" autocomplete="off" spellcheck="false" class="no-drag select-text w-full bg-[#111] border border-white/10 rounded-lg pl-10 pr-4 py-2.5 text-white text-sm focus:border-primary focus:ring-1 focus:ring-primary outline-none transition-all cursor-text">
+                                </div>
+                            </div>
+                            <div>
+                                <label for="prof-pass" class="block text-[10px] font-black text-gray-400 uppercase tracking-widest mb-1.5 ml-1">Password</label>
+                                <div class="relative">
+                                    <i class="fa-solid fa-key absolute left-3 top-1/2 -translate-y-1/2 text-gray-500 pointer-events-none" aria-hidden="true"></i>
+                                    <input type="password" id="prof-pass" autocomplete="off" spellcheck="false" class="no-drag select-text w-full bg-[#111] border border-white/10 rounded-lg pl-10 pr-4 py-2.5 text-white text-sm focus:border-primary focus:ring-1 focus:ring-primary outline-none transition-all cursor-text">
+                                </div>
+                            </div>
                         </div>
                     </div>
-                    <div class="grid grid-cols-2 gap-4">
+
+                    <div class="bg-black/30 p-4 rounded-xl border border-white/5 flex items-center justify-between">
                         <div>
-                            <label class="block text-[10px] font-black text-gray-500 uppercase tracking-widest mb-1.5 ml-1">Username</label>
-                            <div class="relative">
-                                <i class="fa-regular fa-user absolute left-3 top-1/2 -translate-y-1/2 text-gray-500 pointer-events-none"></i>
-                                <input type="text" id="prof-user" autocomplete="off" spellcheck="false" class="no-drag select-text w-full bg-[#111] border border-white/10 rounded-lg pl-10 pr-4 py-2.5 text-white text-sm focus:border-primary focus:ring-1 focus:ring-primary outline-none transition-all cursor-text" style="-webkit-app-region: no-drag; -webkit-user-select: text; user-select: text;">
-                            </div>
+                            <p class="font-bold text-white text-sm mb-0.5">Live TV Filter Engine</p>
+                            <p class="text-xs text-gray-400">Reversibly hide channels or regions. Never deletes data.</p>
                         </div>
-                        <div>
-                            <label class="block text-[10px] font-black text-gray-500 uppercase tracking-widest mb-1.5 ml-1">Password</label>
-                            <div class="relative">
-                                <i class="fa-solid fa-key absolute left-3 top-1/2 -translate-y-1/2 text-gray-500 pointer-events-none"></i>
-                                <input type="password" id="prof-pass" autocomplete="off" spellcheck="false" class="no-drag select-text w-full bg-[#111] border border-white/10 rounded-lg pl-10 pr-4 py-2.5 text-white text-sm focus:border-primary focus:ring-1 focus:ring-primary outline-none transition-all cursor-text" style="-webkit-app-region: no-drag; -webkit-user-select: text; user-select: text;">
-                            </div>
-                        </div>
+                        <button onclick="openManageTV()" aria-label="Configure Live TV Filters" class="bg-white/10 hover:bg-white/20 text-white px-4 py-2 rounded-lg text-xs font-bold transition-colors border border-white/10 flex items-center gap-2">
+                            Configure <i class="fa-solid fa-arrow-right" aria-hidden="true"></i>
+                        </button>
                     </div>
                 </div>
 
-                <div class="bg-black/30 p-5 rounded-xl border border-white/5 flex items-center justify-between">
-                    <div>
-                        <p class="font-bold text-white text-sm mb-0.5">Live TV Filter Engine</p>
-                        <p class="text-xs text-gray-400">Block unwanted regions to speed up loading.</p>
+                <!-- Panel 2: M3U URL -->
+                <div id="panel-source-m3u" class="space-y-4 hidden">
+                    <div class="bg-black/30 p-4 sm:p-5 rounded-xl border border-white/5 space-y-4">
+                        <div>
+                            <label for="m3u-url-input" class="block text-[10px] font-black text-gray-400 uppercase tracking-widest mb-1.5 ml-1">M3U / M3U8 Playlist URL</label>
+                            <input type="url" id="m3u-url-input" placeholder="https://example.com/playlist.m3u8" class="w-full bg-[#111] border border-white/10 rounded-lg px-4 py-2.5 text-white text-sm focus:border-primary outline-none">
+                        </div>
+                        <div>
+                            <label for="epg-url-input" class="block text-[10px] font-black text-gray-400 uppercase tracking-widest mb-1.5 ml-1">XMLTV / EPG URL (Optional)</label>
+                            <input type="url" id="epg-url-input" placeholder="https://example.com/epg.xml" class="w-full bg-[#111] border border-white/10 rounded-lg px-4 py-2.5 text-white text-sm focus:border-primary outline-none">
+                        </div>
+                        <button onclick="loadM3uUrlSource()" class="w-full bg-primary hover:bg-red-700 text-white font-bold py-2.5 rounded-lg transition-colors text-sm flex items-center justify-center gap-2">
+                            <i class="fa-solid fa-cloud-arrow-down" aria-hidden="true"></i> Ingest Playlist URL
+                        </button>
                     </div>
-                    <button onclick="openManageTV()" class="bg-white/10 hover:bg-white/20 text-white px-4 py-2 rounded-lg text-xs font-bold transition-colors border border-white/10 flex items-center gap-2">
-                        Configure <i class="fa-solid fa-arrow-right"></i>
-                    </button>
+                </div>
+
+                <!-- Panel 3: Local File Upload -->
+                <div id="panel-source-file" class="space-y-4 hidden">
+                    <div class="bg-black/30 p-5 rounded-xl border border-white/5 space-y-4 text-center">
+                        <i class="fa-solid fa-file-arrow-up text-4xl text-gray-500 mb-1" aria-hidden="true"></i>
+                        <div>
+                            <h3 class="font-bold text-white text-sm">Select Playlist or EPG from Disk</h3>
+                            <p class="text-xs text-gray-400 mt-1">Supports .m3u, .m3u8, .xml, and .xmltv files. Parsed locally on your device.</p>
+                        </div>
+                        <input type="file" id="local-file-input" accept=".m3u,.m3u8,.xml,.xmltv,.txt" class="hidden" onchange="handleLocalFileUpload(event)">
+                        <button onclick="document.getElementById('local-file-input').click()" class="bg-white/10 hover:bg-white/20 text-white font-bold px-6 py-2.5 rounded-lg text-sm border border-white/10 transition-colors inline-flex items-center gap-2">
+                            <i class="fa-solid fa-folder-open" aria-hidden="true"></i> Browse Local File
+                        </button>
+                    </div>
+                </div>
+
+                <!-- Panel 4: Legal & Privacy Statement -->
+                <div id="panel-source-privacy" class="space-y-4 hidden text-xs leading-relaxed text-gray-300">
+                    <div class="bg-black/30 p-4 rounded-xl border border-white/5 space-y-2">
+                        <div class="font-bold text-white text-sm flex items-center gap-2 text-primary">
+                            <i class="fa-solid fa-scale-balanced" aria-hidden="true"></i> Bring-Your-Own-Source (BYOS) Policy
+                        </div>
+                        <p>AURA IPTV is an independent media player software application. It does not provide, host, or distribute any media content, channels, or stream URLs. Users are exclusively responsible for obtaining lawful access to their playlists and verifying content licensing.</p>
+                    </div>
+
+                    <div class="bg-black/30 p-4 rounded-xl border border-white/5 space-y-2">
+                        <div class="font-bold text-white text-sm flex items-center gap-2 text-green-400">
+                            <i class="fa-solid fa-shield-halved" aria-hidden="true"></i> Privacy &amp; Telemetry Notice
+                        </div>
+                        <p>Zero telemetry. We collect zero analytics and transmit no tracking data. All credentials, playlists, favorites, and watch history remain strictly in your local device storage (IndexedDB &amp; LocalStorage).</p>
+                    </div>
+
+                    <div class="bg-black/30 p-4 rounded-xl border border-white/5 space-y-3">
+                        <div class="font-bold text-white text-sm">Data Control</div>
+                        <div class="flex gap-2">
+                            <button onclick="exportAllUserData()" class="flex-1 bg-white/10 hover:bg-white/20 border border-white/10 text-white font-bold py-2 rounded-lg transition-colors flex items-center justify-center gap-2">
+                                <i class="fa-solid fa-download" aria-hidden="true"></i> Export Data
+                            </button>
+                            <button onclick="eraseAllUserData()" class="flex-1 bg-red-500/20 hover:bg-red-500/30 text-red-400 border border-red-500/30 font-bold py-2 rounded-lg transition-colors flex items-center justify-center gap-2">
+                                <i class="fa-solid fa-trash-can" aria-hidden="true"></i> Erase All Data
+                            </button>
+                        </div>
+                    </div>
                 </div>
             </div>
 
             <div class="p-5 border-t border-white/5 bg-black/50 rounded-b-2xl space-y-3">
                 <div id="conn-test-status" class="hidden"></div>
                 <div class="flex gap-3">
-                    <button onclick="closeProfileModal()" class="flex-1 bg-transparent hover:bg-white/5 text-gray-300 font-bold py-3 rounded-xl transition-colors border border-white/10 text-sm">Cancel</button>
-                    <button onclick="testConnection()" class="flex-1 bg-white/10 hover:bg-white/20 text-white font-bold py-3 rounded-xl transition-colors border border-white/10 text-sm flex items-center justify-center gap-2">
-                        <i class="fa-solid fa-plug"></i> Test
+                    <button onclick="closeProfileModal()" class="flex-1 bg-transparent hover:bg-white/5 text-gray-300 font-bold py-3 rounded-xl transition-colors border border-white/10 text-sm">Close</button>
+                    <button onclick="testConnection()" id="btn-test-conn" class="flex-1 bg-white/10 hover:bg-white/20 text-white font-bold py-3 rounded-xl transition-colors border border-white/10 text-sm flex items-center justify-center gap-2">
+                        <i class="fa-solid fa-plug" aria-hidden="true"></i> Test
                     </button>
                     <button onclick="saveProfile()" class="flex-[2] bg-primary hover:bg-red-700 text-white font-bold py-3 rounded-xl transition-all shadow-[0_0_20px_rgba(229,9,20,0.3)] hover:-translate-y-0.5 text-sm flex items-center justify-center gap-2">
-                        <i class="fa-solid fa-cloud-arrow-down"></i> Save & Connect
+                        <i class="fa-solid fa-cloud-arrow-down" aria-hidden="true"></i> Save &amp; Connect
                     </button>
                 </div>
             </div>
@@ -535,39 +634,70 @@
     </div>
 
     <!-- Live TV Management Modal -->
-    <div id="manage-tv-modal" class="fixed inset-0 z-[700] hidden bg-mainbg text-white flex flex-col transition-opacity duration-300 opacity-0 overflow-hidden">
+    <div id="manage-tv-modal" class="fixed inset-0 z-[700] hidden bg-mainbg text-white flex flex-col transition-opacity duration-300 opacity-0 overflow-hidden" role="dialog" aria-modal="true" aria-labelledby="manage-tv-title">
         <div class="flex-none px-6 py-5 bg-panelbg border-b border-white/5 flex items-center justify-between z-20 pt-safe shadow-lg">
             <div class="flex items-center gap-5">
-                <button onclick="closeManageTV()" class="w-10 h-10 rounded-full bg-white/5 hover:bg-white/10 flex items-center justify-center transition-colors border border-white/10">
-                    <i class="fa-solid fa-arrow-left"></i>
+                <button onclick="closeManageTV()" aria-label="Back to sources" class="w-10 h-10 rounded-full bg-white/5 hover:bg-white/10 flex items-center justify-center transition-colors border border-white/10">
+                    <i class="fa-solid fa-arrow-left" aria-hidden="true"></i>
                 </button>
                 <div>
-                    <h2 class="text-xl font-bold tracking-tight">Provider TV Configuration</h2>
-                    <p class="text-xs text-gray-400 mt-0.5">Unselected channels are physically dropped to save browser memory.</p>
+                    <h2 id="manage-tv-title" class="text-xl font-bold tracking-tight">Channel &amp; Region Visibility</h2>
+                    <p class="text-xs text-gray-400 mt-0.5">Hidden channels are reversibly excluded from browse lists. Changes are non-destructive.</p>
                 </div>
             </div>
-            <button onclick="saveManageTV()" class="bg-primary hover:bg-red-700 text-white px-8 py-2.5 rounded-lg font-bold shadow-[0_0_15px_rgba(229,9,20,0.3)] transition-colors text-sm">Save Rules</button>
-        </div>
-        
-        <div class="flex-none p-6 bg-[#111] border-b border-white/5 flex items-center gap-4 z-10">
-            <div class="relative flex-1 max-w-lg">
-                <i class="fa-solid fa-search absolute left-4 top-1/2 -translate-y-1/2 text-gray-500"></i>
-                <input type="text" id="manage-tv-search" oninput="renderManageCats(this.value)" placeholder="Search provider categories..." class="w-full bg-panelbg border border-white/10 rounded-xl py-3 pl-11 pr-4 outline-none focus:border-primary text-sm transition-colors shadow-inner">
-            </div>
-            <div class="flex gap-2">
-                <button onclick="selectAllManageCats()" class="text-xs font-bold text-gray-300 bg-white/5 hover:bg-white/10 px-4 py-3 rounded-xl transition-colors border border-white/5">Select All</button>
-                <button onclick="deselectAllManageCats()" class="text-xs font-bold text-gray-300 bg-white/5 hover:bg-white/10 px-4 py-3 rounded-xl transition-colors border border-white/5">Block All</button>
+            <div class="flex items-center gap-3">
+                <span id="manage-tv-hidden-count" class="hidden text-xs bg-yellow-500/20 text-yellow-400 border border-yellow-500/30 px-3 py-1.5 rounded-lg font-bold"></span>
+                <button onclick="saveManageTV()" class="bg-primary hover:bg-red-700 text-white px-8 py-2.5 rounded-lg font-bold shadow-[0_0_15px_rgba(229,9,20,0.3)] transition-colors text-sm">Save Visibility</button>
             </div>
         </div>
         
-        <div id="manage-tv-list" class="flex-1 overflow-y-auto p-6 space-y-3 custom-scroll content-start max-w-5xl mx-auto w-full"></div>
+        <div class="flex-none p-6 bg-[#111] border-b border-white/5 flex flex-wrap items-center gap-4 z-10">
+            <div class="relative flex-1 min-w-[240px]">
+                <i class="fa-solid fa-search absolute left-4 top-1/2 -translate-y-1/2 text-gray-500" aria-hidden="true"></i>
+                <input type="text" id="manage-tv-search" oninput="renderManageCats(this.value)" placeholder="Search provider categories..." aria-label="Search categories" class="w-full bg-panelbg border border-white/10 rounded-xl py-3 pl-11 pr-4 outline-none focus:border-primary text-sm transition-colors shadow-inner">
+            </div>
+            <div class="flex flex-wrap gap-2">
+                <button onclick="selectAllManageCats()" class="text-xs font-bold text-gray-300 bg-white/5 hover:bg-white/10 px-4 py-3 rounded-xl transition-colors border border-white/5">Show All</button>
+                <button onclick="deselectAllManageCats()" class="text-xs font-bold text-gray-300 bg-white/5 hover:bg-white/10 px-4 py-3 rounded-xl transition-colors border border-white/5">Hide All</button>
+            </div>
+        </div>
+        
+        <div id="manage-tv-list" class="flex-1 overflow-y-auto p-6 space-y-3 custom-scroll content-start max-w-5xl mx-auto w-full" role="list"></div>
+    </div>
+
+    <!-- Keyboard & Remote Shortcuts Modal -->
+    <div id="shortcuts-modal" class="fixed inset-0 z-[750] hidden flex items-center justify-center bg-black/80 backdrop-blur-sm transition-opacity duration-300 opacity-0 px-4" role="dialog" aria-modal="true" aria-labelledby="shortcuts-title">
+        <div class="bg-panelbg border border-white/10 w-full max-w-lg rounded-2xl p-6 shadow-2xl space-y-5">
+            <div class="flex items-center justify-between border-b border-white/10 pb-4">
+                <h2 id="shortcuts-title" class="text-lg font-black text-white flex items-center gap-2"><i class="fa-solid fa-keyboard text-primary" aria-hidden="true"></i> Keyboard &amp; Remote Shortcuts</h2>
+                <button onclick="toggleShortcutsModal()" aria-label="Close shortcuts" class="w-8 h-8 rounded-full bg-white/5 hover:bg-white/10 text-gray-400 hover:text-white flex items-center justify-center transition-colors"><i class="fa-solid fa-xmark" aria-hidden="true"></i></button>
+            </div>
+            <div class="grid grid-cols-2 gap-3 text-xs">
+                <div class="bg-black/40 p-3 rounded-lg border border-white/5 flex justify-between items-center"><span class="text-gray-400">Play / Pause</span><kbd class="bg-white/10 px-2 py-1 rounded font-mono font-bold text-white">Space</kbd></div>
+                <div class="bg-black/40 p-3 rounded-lg border border-white/5 flex justify-between items-center"><span class="text-gray-400">Fullscreen</span><kbd class="bg-white/10 px-2 py-1 rounded font-mono font-bold text-white">F</kbd></div>
+                <div class="bg-black/40 p-3 rounded-lg border border-white/5 flex justify-between items-center"><span class="text-gray-400">Mute / Unmute</span><kbd class="bg-white/10 px-2 py-1 rounded font-mono font-bold text-white">M</kbd></div>
+                <div class="bg-black/40 p-3 rounded-lg border border-white/5 flex justify-between items-center"><span class="text-gray-400">Seek ±10s</span><kbd class="bg-white/10 px-2 py-1 rounded font-mono font-bold text-white">← / →</kbd></div>
+                <div class="bg-black/40 p-3 rounded-lg border border-white/5 flex justify-between items-center"><span class="text-gray-400">Channel Up / Down</span><kbd class="bg-white/10 px-2 py-1 rounded font-mono font-bold text-white">↑ / ↓</kbd></div>
+                <div class="bg-black/40 p-3 rounded-lg border border-white/5 flex justify-between items-center"><span class="text-gray-400">Recall Last Channel</span><kbd class="bg-white/10 px-2 py-1 rounded font-mono font-bold text-white">0 / L</kbd></div>
+                <div class="bg-black/40 p-3 rounded-lg border border-white/5 flex justify-between items-center"><span class="text-gray-400">Direct Number Dial</span><kbd class="bg-white/10 px-2 py-1 rounded font-mono font-bold text-white">1 - 999</kbd></div>
+                <div class="bg-black/40 p-3 rounded-lg border border-white/5 flex justify-between items-center"><span class="text-gray-400">Global Search</span><kbd class="bg-white/10 px-2 py-1 rounded font-mono font-bold text-white">/ or ⌘K</kbd></div>
+                <div class="bg-black/40 p-3 rounded-lg border border-white/5 flex justify-between items-center"><span class="text-gray-400">Aspect Ratio</span><kbd class="bg-white/10 px-2 py-1 rounded font-mono font-bold text-white">A</kbd></div>
+                <div class="bg-black/40 p-3 rounded-lg border border-white/5 flex justify-between items-center"><span class="text-gray-400">Back / Close</span><kbd class="bg-white/10 px-2 py-1 rounded font-mono font-bold text-white">Esc</kbd></div>
+            </div>
+            <div class="text-center pt-2">
+                <button onclick="toggleShortcutsModal()" class="w-full bg-white/10 hover:bg-white/20 text-white font-bold py-2.5 rounded-xl transition-colors text-sm">Got it</button>
+            </div>
+        </div>
+    </div>
+
+    <!-- Number Dialing HUD for 10-foot TV navigation -->
+    <div id="number-dial-hud" class="fixed top-8 right-8 z-[600] bg-black/90 border border-primary text-white px-6 py-4 rounded-2xl shadow-2xl font-mono text-4xl font-black hidden pointer-events-none transition-all duration-150">
+        <span class="text-primary mr-2">CH</span><span id="number-dial-value">1</span>
     </div>
 
     <!-- Toast Notification -->
-    <div id="aura-toast" class="aura-toast"></div>
+    <div id="aura-toast" class="aura-toast" role="status" aria-live="polite"></div>
 
-    
-    
     <script src="./js/aura-app.js" defer></script>
 </body>
 </html>

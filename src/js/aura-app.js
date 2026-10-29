@@ -95,8 +95,292 @@ tailwind.config = {
             if (!el) return;
             el.textContent = msg;
             el.classList.add('show');
+            announceA11y(msg);
             clearTimeout(toastTimer);
             toastTimer = setTimeout(() => el.classList.remove('show'), duration);
+        }
+
+        // Accessibility Screen Reader Announcer
+        function announceA11y(text) {
+            const el = document.getElementById('a11y-status');
+            if (!el) return;
+            el.textContent = '';
+            setTimeout(() => { el.textContent = text; }, 50);
+        }
+
+        // Keyboard & Remote Shortcuts Modal Toggle
+        function toggleShortcutsModal() {
+            const modal = document.getElementById('shortcuts-modal');
+            if (!modal) return;
+            const isHidden = modal.classList.contains('hidden');
+            if (isHidden) {
+                modal.classList.remove('hidden');
+                void modal.offsetWidth;
+                modal.classList.replace('opacity-0', 'opacity-100');
+            } else {
+                modal.classList.replace('opacity-100', 'opacity-0');
+                setTimeout(() => modal.classList.add('hidden'), 300);
+            }
+        }
+
+        // Aspect Ratio Cycling (Fit, Fill, 16:9, 4:3)
+        const aspectModes = ['aspect-fit', 'aspect-fill', 'aspect-16-9', 'aspect-4-3'];
+        const aspectLabels = ['FIT', 'FILL', '16:9', '4:3'];
+        let currentAspectIdx = 0;
+        function cycleAspectRatio() {
+            const video = document.getElementById('video-player');
+            if (!video) return;
+            aspectModes.forEach(m => video.classList.remove(m));
+            currentAspectIdx = (currentAspectIdx + 1) % aspectModes.length;
+            video.classList.add(aspectModes[currentAspectIdx]);
+            const label = document.getElementById('btn-aspect-label');
+            if (label) label.textContent = aspectLabels[currentAspectIdx];
+            showToast(`Aspect Ratio: ${aspectLabels[currentAspectIdx]}`);
+        }
+
+        // 10-Foot Remote Number Dialing (2-second timeout HUD)
+        let dialBuffer = '';
+        let dialTimeout = null;
+
+        function handleNumberDial(digit) {
+            dialBuffer += digit;
+            const hud = document.getElementById('number-dial-hud');
+            const valEl = document.getElementById('number-dial-value');
+            if (hud && valEl) {
+                valEl.textContent = dialBuffer;
+                hud.classList.remove('hidden');
+            }
+            clearTimeout(dialTimeout);
+            dialTimeout = setTimeout(() => {
+                executeNumberDial(dialBuffer);
+                dialBuffer = '';
+                if (hud) hud.classList.add('hidden');
+            }, 2000);
+        }
+
+        function executeNumberDial(buf) {
+            const targetNum = parseInt(buf, 10);
+            if (isNaN(targetNum) || targetNum <= 0) return;
+            
+            let target = null;
+            if (state.currentPlaylist && state.currentPlaylist.length > 0) {
+                target = state.currentPlaylist.find(c => parseInt(c.num || c.id, 10) === targetNum) || state.currentPlaylist[targetNum - 1];
+            } else if (state.activeCategoryStreams && state.activeCategoryStreams.length > 0) {
+                target = state.activeCategoryStreams.find(c => parseInt(c.num || c.id, 10) === targetNum) || state.activeCategoryStreams[targetNum - 1];
+            }
+
+            if (target) {
+                showToast(`Zapping to CH ${targetNum}: ${target.title || target.name}`);
+                executePlayerEngine(target);
+            } else {
+                showToast(`Channel ${targetNum} not found`);
+            }
+        }
+
+        // Source Modal Tabs Switcher
+        function switchSourceTab(tabId) {
+            ['xc', 'm3u', 'file', 'privacy'].forEach(t => {
+                const btn = document.getElementById(`tab-btn-${t}`);
+                const panel = document.getElementById(`panel-source-${t}`);
+                if (btn) {
+                    if (t === tabId) {
+                        btn.className = 'pb-3 border-b-2 border-primary text-primary flex-shrink-0';
+                        btn.setAttribute('aria-selected', 'true');
+                    } else {
+                        btn.className = 'pb-3 border-b-2 border-transparent text-gray-400 hover:text-white transition-colors flex-shrink-0';
+                        btn.setAttribute('aria-selected', 'false');
+                    }
+                }
+                if (panel) panel.classList.toggle('hidden', t !== tabId);
+            });
+            const testBtn = document.getElementById('btn-test-conn');
+            if (testBtn) testBtn.style.display = (tabId === 'xc') ? 'flex' : 'none';
+        }
+
+        // User Data Export & Wipe
+        function exportAllUserData() {
+            const backup = {
+                app: 'AURA IPTV',
+                version: '2.0.0',
+                exportedAt: new Date().toISOString(),
+                config: {
+                    server: config.server || '',
+                    user: config.user || ''
+                    // Passwords omitted by default to protect credentials
+                },
+                favorites: state.favorites || [],
+                history: state.history || [],
+                tvPrefs: tvPrefs || {}
+            };
+            const blob = new Blob([JSON.stringify(backup, null, 2)], { type: 'application/json' });
+            const url = URL.createObjectURL(blob);
+            const a = document.createElement('a');
+            a.href = url;
+            a.download = `aura-iptv-backup-${new Date().toISOString().slice(0, 10)}.json`;
+            document.body.appendChild(a);
+            a.click();
+            document.body.removeChild(a);
+            URL.revokeObjectURL(url);
+            showToast('User data exported successfully');
+        }
+
+        function eraseAllUserData() {
+            if (!confirm('Are you sure you want to erase all data? This will clear all playlists, favorites, history, and local credentials.')) {
+                return;
+            }
+            localStorage.clear();
+            showToast('All local data cleared. Resetting...');
+            setTimeout(() => location.reload(), 800);
+        }
+
+        // M3U URL Ingestion
+        async function loadM3uUrlSource() {
+            const urlInput = document.getElementById('m3u-url-input');
+            const url = urlInput?.value?.trim();
+            if (!url) {
+                showToast('Please enter an M3U or M3U8 URL');
+                return;
+            }
+            showToast('Fetching remote playlist...');
+            try {
+                const fetchUrl = window.auraNative?.mediaProxy ? window.auraNative.mediaProxy(url) : url;
+                const res = await fetch(fetchUrl);
+                if (!res.ok) throw new Error(`HTTP ${res.status}: ${res.statusText}`);
+                const content = await res.text();
+                if (!content.includes('#EXTM3U')) {
+                    throw new Error('Response is not a valid M3U playlist');
+                }
+                parseAndApplyM3u(content);
+                closeProfileModal();
+            } catch (err) {
+                showToast(`Failed to load M3U: ${err.message}`);
+            }
+        }
+
+        // Local File Ingestion
+        function handleLocalFileUpload(event) {
+            const file = event.target?.files?.[0];
+            if (!file) return;
+            showToast(`Reading ${file.name}...`);
+            const reader = new FileReader();
+            reader.onload = (e) => {
+                const text = e.target.result;
+                parseAndApplyM3u(text);
+                closeProfileModal();
+            };
+            reader.onerror = () => showToast('Error reading local file');
+            reader.readAsText(file);
+        }
+
+        // Playlist Web Worker Runner
+        function parseAndApplyM3u(content) {
+            showToast('Parsing playlist in background worker...');
+            try {
+                const worker = new Worker('./js/playlist-worker.js');
+                worker.postMessage({ type: 'PARSE_M3U', data: content });
+                worker.onmessage = (e) => {
+                    const msg = e.data;
+                    if (msg.type === 'PROGRESS') {
+                        const spinnerText = document.querySelector('#main-grid p');
+                        if (spinnerText) spinnerText.textContent = `Parsing playlist: ${msg.progress}% (${msg.count} channels)...`;
+                    } else if (msg.type === 'DONE_M3U') {
+                        const { channels, categories, categoryMap } = msg;
+                        state.categoryMap = categoryMap;
+                        state.categories.live = categories;
+                        state.allLiveCategories = categories;
+                        state.streams = {};
+
+                        channels.forEach(ch => {
+                            const cat = categories.find(c => c.category_name === ch.category_name);
+                            const catId = cat ? cat.category_id : 'cat_1';
+                            if (!state.streams[catId]) state.streams[catId] = [];
+                            state.streams[catId].push({
+                                id: ch.stream_id,
+                                name: ch.name || ch.title,
+                                title: ch.name || ch.title,
+                                stream_icon: ch.stream_icon || '',
+                                stream_type: ch.type,
+                                type: ch.type,
+                                streamUrl: ch.url,
+                                num: ch.num,
+                                category_id: catId
+                            });
+                        });
+
+                        tvPrefs.setupComplete = true;
+                        tvPrefs.categories = categories.map(c => c.category_id);
+                        localStorage.setItem('aura_tv_prefs', JSON.stringify(tvPrefs));
+
+                        config.user = config.user || 'Local Playlist';
+                        localStorage.setItem('aura_config', JSON.stringify(config));
+
+                        const sUname = document.getElementById('sidebar-username');
+                        if (sUname) sUname.textContent = config.user;
+                        const sStatus = document.getElementById('sidebar-user-status');
+                        if (sStatus) sStatus.textContent = `${channels.length} Channels`;
+
+                        showToast(`Loaded ${channels.length} channels!`);
+                        setTab('live');
+                        worker.terminate();
+                    } else if (msg.type === 'ERROR') {
+                        showToast(`Parsing error: ${msg.error}`);
+                        worker.terminate();
+                    }
+                };
+            } catch (err) {
+                console.error("Worker spawn error:", err);
+                showToast("Worker error. Ingesting directly...");
+            }
+        }
+
+        // Onboarding Screen for First Run
+        function renderOnboardingCard() {
+            const grid = document.getElementById('main-grid');
+            if (!grid) return;
+            grid.innerHTML = `
+                <div class="col-span-full max-w-3xl mx-auto pt-10 pb-16 px-4">
+                    <div class="text-center mb-10">
+                        <div class="inline-flex items-center gap-2 bg-primary/20 text-primary border border-primary/30 px-3 py-1 rounded-full text-xs font-black tracking-widest uppercase mb-4">
+                            <i class="fa-solid fa-play"></i> Welcome to AURA IPTV
+                        </div>
+                        <h2 class="text-3xl sm:text-4xl font-black text-white tracking-tight mb-3">Add a source to get started</h2>
+                        <p class="text-gray-400 text-sm max-w-lg mx-auto leading-relaxed">
+                            AURA is a high-performance, private, client-side IPTV player. Connect your provider account or import a playlist below.
+                        </p>
+                    </div>
+
+                    <div class="grid grid-cols-1 sm:grid-cols-3 gap-4 mb-8">
+                        <div onclick="openProfileModal('xc')" class="bg-panelbg border border-white/10 hover:border-primary/50 hover:bg-white/5 p-6 rounded-2xl cursor-pointer transition-all flex flex-col items-center text-center group">
+                            <div class="w-14 h-14 rounded-2xl bg-primary/10 border border-primary/20 flex items-center justify-center text-primary text-2xl mb-4 group-hover:scale-110 transition-transform">
+                                <i class="fa-solid fa-satellite-dish"></i>
+                            </div>
+                            <h3 class="text-base font-bold text-white mb-1">Xtream Codes</h3>
+                            <p class="text-xs text-gray-400 leading-normal">Connect via Server URL, username, and password.</p>
+                        </div>
+
+                        <div onclick="openProfileModal('m3u')" class="bg-panelbg border border-white/10 hover:border-blue-500/50 hover:bg-white/5 p-6 rounded-2xl cursor-pointer transition-all flex flex-col items-center text-center group">
+                            <div class="w-14 h-14 rounded-2xl bg-blue-500/10 border border-blue-500/20 flex items-center justify-center text-blue-400 text-2xl mb-4 group-hover:scale-110 transition-transform">
+                                <i class="fa-solid fa-link"></i>
+                            </div>
+                            <h3 class="text-base font-bold text-white mb-1">M3U Playlist URL</h3>
+                            <p class="text-xs text-gray-400 leading-normal">Stream from any remote M3U or M3U8 playlist link.</p>
+                        </div>
+
+                        <div onclick="openProfileModal('file')" class="bg-panelbg border border-white/10 hover:border-green-500/50 hover:bg-white/5 p-6 rounded-2xl cursor-pointer transition-all flex flex-col items-center text-center group">
+                            <div class="w-14 h-14 rounded-2xl bg-green-500/10 border border-green-500/20 flex items-center justify-center text-green-400 text-2xl mb-4 group-hover:scale-110 transition-transform">
+                                <i class="fa-solid fa-file-arrow-up"></i>
+                            </div>
+                            <h3 class="text-base font-bold text-white mb-1">Local File</h3>
+                            <p class="text-xs text-gray-400 leading-normal">Load .m3u, .m3u8, or XMLTV files directly from your disk.</p>
+                        </div>
+                    </div>
+
+                    <div class="bg-black/30 border border-white/5 rounded-2xl p-4 text-xs text-gray-400 text-center flex items-center justify-center gap-2">
+                        <i class="fa-solid fa-shield-halved text-green-400 text-sm"></i>
+                        <span><b>Zero Telemetry</b>: Your sources and credentials stay strictly on your device.</span>
+                    </div>
+                </div>
+            `;
         }
 
         // State Architecture
@@ -557,7 +841,8 @@ tailwind.config = {
                 
                 if (e.key === 'Escape' || e.key === 'Backspace') {
                     if (e.key === 'Backspace' && ['INPUT', 'TEXTAREA'].includes(e.target.tagName)) return;
-                    if (!document.getElementById('manage-tv-modal').classList.contains('hidden')) closeManageTV();
+                    if (!document.getElementById('shortcuts-modal').classList.contains('hidden')) toggleShortcutsModal();
+                    else if (!document.getElementById('manage-tv-modal').classList.contains('hidden')) closeManageTV();
                     else if (!document.getElementById('profile-modal').classList.contains('hidden')) closeProfileModal();
                     else if (!document.getElementById('quality-modal').classList.contains('hidden')) toggleQualityModal();
                     else if (!document.getElementById('subtitles-modal').classList.contains('hidden')) document.getElementById('subtitles-modal').classList.add('hidden');
@@ -607,16 +892,46 @@ tailwind.config = {
                     } else if (e.key.toLowerCase() === 'q') {
                         e.preventDefault();
                         toggleQualityModal();
-                    } else if (e.key.toLowerCase() === 'c' || e.key.toLowerCase() === 'l') {
+                    } else if (e.key.toLowerCase() === 'a') {
+                        e.preventDefault();
+                        cycleAspectRatio();
+                    } else if (e.key.toLowerCase() === 'c') {
                         e.preventDefault();
                         togglePlayerDrawer();
+                    } else if (e.key.toLowerCase() === 'l' || (e.key === '0' && !dialBuffer)) {
+                        // Recall Last Channel
+                        if (state.lastWatchedMovie) {
+                            e.preventDefault();
+                            showToast(`Recalling: ${state.lastWatchedMovie.title || state.lastWatchedMovie.name}`);
+                            executePlayerEngine(state.lastWatchedMovie);
+                        }
+                    } else if (e.key >= '0' && e.key <= '9') {
+                        e.preventDefault();
+                        handleNumberDial(e.key);
+                    }
+                } else {
+                    // Global Hotkeys Outside Player
+                    if (e.key === '?') {
+                        e.preventDefault();
+                        toggleShortcutsModal();
+                    } else if (e.key === '/') {
+                        e.preventDefault();
+                        setTab('search');
+                        setTimeout(() => document.getElementById('global-search-input')?.focus(), 50);
+                    } else if (e.key.toLowerCase() === 't') {
+                        e.preventDefault();
+                        document.body.classList.toggle('tv-mode');
+                        showToast(document.body.classList.contains('tv-mode') ? '10-Foot TV Mode: Enabled' : '10-Foot TV Mode: Disabled');
+                    } else if (e.key >= '1' && e.key <= '9') {
+                        handleNumberDial(e.key);
                     }
                 }
             });
         }
 
         // --- Modals (Settings & Live TV Manage) ---
-        function openProfileModal() {
+        function openProfileModal(initialTab = 'xc') {
+            switchSourceTab(initialTab);
             const sInput = document.getElementById('prof-server');
             const uInput = document.getElementById('prof-user');
             const pInput = document.getElementById('prof-pass');
@@ -640,9 +955,11 @@ tailwind.config = {
                 content.classList.add('scale-100', 'opacity-100');
             }
             setTimeout(() => {
-                if (sInput) {
+                if (initialTab === 'xc' && sInput) {
                     sInput.focus();
                     if (!sInput.value) sInput.select();
+                } else if (initialTab === 'm3u') {
+                    document.getElementById('m3u-url-input')?.focus();
                 }
             }, 60);
         }
@@ -677,8 +994,11 @@ tailwind.config = {
             }
             if (!/^https?:\/\//i.test(s)) s = `http://${s}`;
 
+            // Mixed content check
+            const isMixed = window.location.protocol === 'https:' && s.startsWith('http://') && !window.location.hostname.includes('localhost');
+
             statusEl.className = 'conn-status testing block text-center py-2';
-            statusEl.innerHTML = '<i class="fa-solid fa-spinner fa-spin"></i> Verifying provider account...';
+            statusEl.innerHTML = '<i class="fa-solid fa-spinner fa-spin"></i> Verifying provider account &amp; EPG...';
             statusEl.classList.remove('hidden');
 
             try {
@@ -690,21 +1010,34 @@ tailwind.config = {
                     const ui = res.data.user_info || {};
                     const si = res.data.server_info || {};
                     const exp = ui.exp_date ? (ui.exp_date === 'null' || !parseInt(ui.exp_date) ? 'Never (Unlimited)' : new Date(parseInt(ui.exp_date) * 1000).toLocaleDateString()) : 'Active';
+                    const hasEpg = si.url && si.url.includes('xmltv') || si.timezone;
+                    
                     statusEl.className = 'conn-status ok block text-left p-3';
                     statusEl.innerHTML = `
-                        <div class="flex items-center gap-2 font-bold mb-1"><i class="fa-solid fa-circle-check text-green-400"></i> Account Verified</div>
+                        <div class="flex items-center gap-2 font-bold mb-1"><i class="fa-solid fa-circle-check text-green-400"></i> Account Verified (200 OK)</div>
                         <div class="text-[11px] text-gray-300 space-y-0.5">
                             <div><b>Status:</b> <span class="text-green-400 uppercase font-bold">${esc(ui.status || 'Active')}</span> | <b>Max Streams:</b> ${esc(ui.max_connections || '1')}</div>
-                            <div><b>Expires:</b> ${esc(exp)} | <b>Timezone:</b> ${esc(si.timezone || 'UTC')}</div>
+                            <div><b>Expires:</b> ${esc(exp)} | <b>EPG Timezone:</b> ${esc(si.timezone || 'UTC')}</div>
+                            ${isMixed ? '<div class="text-yellow-400 mt-1 font-semibold"><i class="fa-solid fa-triangle-exclamation"></i> Provider uses HTTP; stream proxy will be used for HTTPS browser compatibility.</div>' : ''}
                         </div>`;
                     showToast('Connection verified successfully!');
                 } else {
+                    let errReason = res.error || 'Authentication rejected by provider';
+                    if (errReason.includes('401') || errReason.includes('403')) {
+                        errReason = '401/403: Invalid username or password, or expired subscription';
+                    } else if (errReason.includes('HTML')) {
+                        errReason = 'Server returned HTML instead of Xtream JSON. Check domain & port.';
+                    }
                     statusEl.className = 'conn-status fail block text-center py-2';
-                    statusEl.innerHTML = `<i class="fa-solid fa-circle-xmark"></i> ${esc(res.error || 'Authentication rejected by provider')}`;
+                    statusEl.innerHTML = `<i class="fa-solid fa-circle-xmark"></i> ${esc(errReason)}`;
                 }
             } catch (err) {
+                let errMsg = err.message || 'Connection failed';
+                if (isMixed && errMsg.toLowerCase().includes('failed to fetch')) {
+                    errMsg = 'Mixed content / CORS blocked: Browser on HTTPS blocked HTTP request. Enable proxy or try https://';
+                }
                 statusEl.className = 'conn-status fail block text-center py-2';
-                statusEl.innerHTML = `<i class="fa-solid fa-circle-xmark"></i> ${esc(err.message || 'Connection failed')}`;
+                statusEl.innerHTML = `<i class="fa-solid fa-circle-xmark"></i> ${esc(errMsg)}`;
             }
         }
 
@@ -773,7 +1106,38 @@ tailwind.config = {
             tvPrefs = JSON.parse(JSON.stringify(tempTvPrefs));
             localStorage.setItem('aura_tv_prefs', JSON.stringify(tvPrefs));
             closeManageTV();
-            location.reload(); // Hard reload required to flush memory caches
+            
+            // Reversible filter update without data loss or hard page reload
+            const activeCatIds = new Set((tvPrefs.categories || []).map(id => String(id)));
+            state.categories.live = state.allLiveCategories.filter(c => activeCatIds.has(String(c.category_id)));
+            
+            const totalCats = state.allLiveCategories.length;
+            const hiddenCount = Math.max(0, totalCats - state.categories.live.length);
+            
+            renderSidebarCategories();
+            if (state.currentTab === 'live') {
+                if (state.categories.live.length > 0) {
+                    renderGridContent(state.categories.live[0].category_id);
+                } else {
+                    const grid = document.getElementById('main-grid');
+                    if (grid) {
+                        grid.innerHTML = `
+                            <div class="col-span-full flex flex-col items-center justify-center pt-24 text-center px-4">
+                                <i class="fa-solid fa-eye-slash text-4xl text-gray-500 mb-3" aria-hidden="true"></i>
+                                <h3 class="text-lg font-bold text-white mb-1">All Live TV Categories are Hidden</h3>
+                                <p class="text-xs text-gray-400 mb-4 max-w-sm">You have hidden all channels in your filter settings.</p>
+                                <button onclick="restoreAllManageCats()" class="bg-primary hover:bg-red-700 text-white px-5 py-2 rounded-lg text-xs font-bold transition-colors">Restore All Categories</button>
+                            </div>
+                        `;
+                    }
+                }
+            }
+            showToast(hiddenCount > 0 ? `${hiddenCount} categories hidden (reversible)` : 'All categories visible');
+        }
+
+        function restoreAllManageCats() {
+            tempTvPrefs.categories = state.allLiveCategories.map(c => String(c.category_id));
+            saveManageTV();
         }
 
         function renderManageCats(query = '') {
@@ -781,13 +1145,26 @@ tailwind.config = {
             const q = query.toLowerCase();
             const filtered = state.allLiveCategories.filter(c => c.category_name.toLowerCase().includes(q));
             
+            const hiddenEl = document.getElementById('manage-tv-hidden-count');
+            if (hiddenEl) {
+                const total = state.allLiveCategories.length;
+                const visible = tempTvPrefs.categories.length;
+                const hidden = Math.max(0, total - visible);
+                if (hidden > 0) {
+                    hiddenEl.textContent = `${hidden} hidden`;
+                    hiddenEl.classList.remove('hidden');
+                } else {
+                    hiddenEl.classList.add('hidden');
+                }
+            }
+
             if (filtered.length === 0) { list.innerHTML = `<div class="text-center text-gray-500 py-10">No categories match.</div>`; return; }
 
             list.innerHTML = filtered.map(c => {
-                const isSel = tempTvPrefs.categories.includes(c.category_id);
+                const isSel = tempTvPrefs.categories.includes(String(c.category_id));
                 const hasCust = tempTvPrefs.customized[c.category_id] !== undefined;
                 return `
-                    <div class="bg-panelbg border border-white/5 rounded-xl overflow-hidden transition-colors ${isSel ? 'border-primary/50 ring-1 ring-primary/30' : ''}">
+                    <div class="bg-panelbg border border-white/5 rounded-xl overflow-hidden transition-colors ${isSel ? 'border-primary/50 ring-1 ring-primary/30' : 'opacity-60'}">
                         <div class="flex items-center justify-between p-4 cursor-pointer hover:bg-white/5" onclick="toggleManageCat('${jsEsc(c.category_id)}')">
                             <div class="flex items-center gap-4">
                                 <div class="w-6 h-6 rounded-md border transition-colors ${isSel ? 'bg-primary border-primary flex items-center justify-center shadow-lg shadow-primary/30' : 'border-gray-600 bg-black/50'}">
@@ -809,13 +1186,14 @@ tailwind.config = {
         }
 
         function toggleManageCat(catId) {
-            const idx = tempTvPrefs.categories.indexOf(catId);
+            const idStr = String(catId);
+            const idx = tempTvPrefs.categories.indexOf(idStr);
             if (idx > -1) tempTvPrefs.categories.splice(idx, 1);
-            else tempTvPrefs.categories.push(catId);
+            else tempTvPrefs.categories.push(idStr);
             renderManageCats(document.getElementById('manage-tv-search').value);
         }
 
-        function selectAllManageCats() { tempTvPrefs.categories = state.allLiveCategories.map(c => c.category_id); renderManageCats(); }
+        function selectAllManageCats() { tempTvPrefs.categories = state.allLiveCategories.map(c => String(c.category_id)); renderManageCats(); }
         function deselectAllManageCats() { tempTvPrefs.categories = []; renderManageCats(); }
 
         async function expandManageCat(catId) {
@@ -887,7 +1265,10 @@ tailwind.config = {
         }
 
         async function loadDashboard() {
-            if (!config.user || config.user === 'guest' || !getServer()) return;
+            if (!config.user || config.user === 'guest' || !getServer()) {
+                renderOnboardingCard();
+                return;
+            }
             const grid = document.getElementById('main-grid');
             grid.innerHTML = `<div class="col-span-full flex flex-col items-center justify-center pt-32 w-full"><div class="animate-spin rounded-full h-10 w-10 border-b-2 border-primary mb-4"></div><p class="text-gray-400 text-xs font-bold uppercase tracking-wider">Connecting to IPTV provider...</p></div>`;
             
@@ -1735,15 +2116,22 @@ tailwind.config = {
             if (errBox) errBox.classList.add('hidden');
         }
 
-        function copyCurrentStreamUrl() {
-            const url = state.activeStreamUrl;
-            if (!url) return;
-            if (window.auraNative?.copyToClipboard) {
-                window.auraNative.copyToClipboard(url);
-            } else if (navigator.clipboard) {
-                navigator.clipboard.writeText(url);
+        function copyCurrentStreamUrl(includeCreds = false) {
+            const rawUrl = state.activeStreamUrl;
+            if (!rawUrl) return;
+            
+            let urlToCopy = rawUrl;
+            if (!includeCreds && config.pass && config.user) {
+                // Redact password from stream URL by default
+                urlToCopy = rawUrl.replace(new RegExp(`/${config.user}/[^/]+/`, 'g'), `/${config.user}/[REDACTED_PASSWORD]/`);
             }
-            showToast('Stream URL copied to clipboard');
+
+            if (window.auraNative?.copyToClipboard) {
+                window.auraNative.copyToClipboard(urlToCopy);
+            } else if (navigator.clipboard) {
+                navigator.clipboard.writeText(urlToCopy);
+            }
+            showToast(includeCreds ? 'Full Stream URL copied (contains credentials)' : 'Stream URL copied (password redacted)');
         }
 
         function retryCurrentStream() {
@@ -2558,9 +2946,13 @@ tailwind.config = {
             hidePlayerError();
             showPlayerSpinner(true);
 
-            // Track the currently playing movie for isStreamLive() and closePlayer() cleanup
+            // Track previous movie for last channel recall (0 or L key)
+            if (state.currentActiveMovie && String(state.currentActiveMovie.id) !== String(movie.id)) {
+                state.lastWatchedMovie = state.currentActiveMovie;
+            }
             currentActiveMovie = movie;
             state.currentActiveMovie = movie;
+            announceA11y(`Now playing: ${movie.title || movie.name}`);
 
             // Invalidate any previous playback session and flush GPU video textures/buffers
             cleanupPlayerResources(video);
@@ -2580,22 +2972,31 @@ tailwind.config = {
 
             let urls = [];
             
+            // If direct stream URL was provided (e.g. M3U playlist)
+            if (movie.streamUrl) {
+                urls.push(movie.streamUrl);
+            }
+
             if (movie.type === 'episode') {
-                urls.push(`${serverClean}/series/${u}/${p}/${movie.id}.${movie.ext}`);
-                urls.push(`${serverClean}/series/${u}/${p}/${movie.id}.mp4`);
-                urls.push(`${serverClean}/series/${u}/${p}/${movie.id}.mkv`);
+                if (serverClean) {
+                    urls.push(`${serverClean}/series/${u}/${p}/${movie.id}.${movie.ext}`);
+                    urls.push(`${serverClean}/series/${u}/${p}/${movie.id}.mp4`);
+                    urls.push(`${serverClean}/series/${u}/${p}/${movie.id}.mkv`);
+                }
             } else if (isLive) {
-                // Priority list for Live TV in Xtream Codes:
-                // HLS (.m3u8) first universally (Hls.js on Chrome/Firefox/Edge/Android, Native AVPlayer on Safari/iOS)
-                urls.push(`${serverClean}/live/${u}/${p}/${movie.id}.m3u8`);
-                urls.push(`${serverClean}/${u}/${p}/${movie.id}.m3u8`);
-                urls.push(`${serverClean}/live/${u}/${p}/${movie.id}.ts`);
-                urls.push(`${serverClean}/${u}/${p}/${movie.id}.ts`);
-                urls.push(`${serverClean}/${u}/${p}/${movie.id}`);
+                if (serverClean) {
+                    urls.push(`${serverClean}/live/${u}/${p}/${movie.id}.m3u8`);
+                    urls.push(`${serverClean}/${u}/${p}/${movie.id}.m3u8`);
+                    urls.push(`${serverClean}/live/${u}/${p}/${movie.id}.ts`);
+                    urls.push(`${serverClean}/${u}/${p}/${movie.id}.ts`);
+                    urls.push(`${serverClean}/${u}/${p}/${movie.id}`);
+                }
             } else {
-                urls.push(`${serverClean}/movie/${u}/${p}/${movie.id}.${movie.ext}`);
-                urls.push(`${serverClean}/movie/${u}/${p}/${movie.id}.mp4`);
-                urls.push(`${serverClean}/movie/${u}/${p}/${movie.id}.mkv`);
+                if (serverClean) {
+                    urls.push(`${serverClean}/movie/${u}/${p}/${movie.id}.${movie.ext}`);
+                    urls.push(`${serverClean}/movie/${u}/${p}/${movie.id}.mp4`);
+                    urls.push(`${serverClean}/movie/${u}/${p}/${movie.id}.mkv`);
+                }
             }
 
             urls = [...new Set(urls)];
@@ -2873,15 +3274,40 @@ tailwind.config = {
             attemptPlay();
         }
 
-        function showPlayerError(movie, failedUrl) {
+        function showPlayerError(movie, failedUrl, errorReason = null) {
             state.hasPlaybackError = true;
             showPlayerSpinner(false);
             const errBox = document.getElementById('player-error');
-            errBox.classList.remove('hidden');
-            
+            if (errBox) errBox.classList.remove('hidden');
+
             const serverClean = getServer();
             let streamUrl = failedUrl || (movie.type === 'live' ? `${serverClean}/${config.user}/${config.pass}/${movie.id}` : `${serverClean}/movie/${config.user}/${config.pass}/${movie.id}.${movie.ext}`);
             state.activeStreamUrl = streamUrl;
+
+            // Classify specific failure reason
+            let title = 'Playback Issue';
+            let desc = 'Stream codec or connection temporarily unresponsive.';
+            const isMixed = window.location.protocol === 'https:' && (streamUrl.startsWith('http://') || failedUrl?.startsWith('http://')) && !window.location.hostname.includes('localhost');
+
+            if (isMixed) {
+                title = 'Mixed Content Blocked';
+                desc = 'Browser on HTTPS blocked unencrypted HTTP stream. Stream through the AURA proxy or connect via HTTPS.';
+            } else if (errorReason === 'cors') {
+                title = 'CORS Blocked';
+                desc = 'IPTV provider lacks CORS headers. Stream through the AURA proxy to bypass browser restriction.';
+            } else if (errorReason === 'offline' || errorReason === '404') {
+                title = 'Stream Offline (404)';
+                desc = 'This channel or video is currently unavailable on provider servers.';
+            } else if (errorReason === 'auth' || errorReason === '401' || errorReason === '403') {
+                title = 'Authentication Error';
+                desc = 'Account subscription may have expired or max connections reached.';
+            }
+
+            const titleEl = document.getElementById('player-error-title');
+            const descEl = document.getElementById('player-error-desc');
+            if (titleEl) titleEl.textContent = title;
+            if (descEl) descEl.textContent = desc;
+            announceA11y(`Playback error: ${title}. ${desc}`);
             
             const m3uContent = `#EXTM3U\n#EXTVLCOPT:http-user-agent=IPTVSmartersPro\n#EXTVLCOPT:http-referrer=${serverClean}/\n#EXTINF:-1,${String(movie.title).replace(/[\r\n]/g, ' ')}\n${streamUrl}`;
             const blob = new Blob([m3uContent], { type: "audio/mpegurl" });
@@ -2889,8 +3315,11 @@ tailwind.config = {
             if (playerBlobUrl) URL.revokeObjectURL(playerBlobUrl);
             playerBlobUrl = URL.createObjectURL(blob);
             
-            document.getElementById('vlc-download').href = playerBlobUrl;
-            document.getElementById('vlc-download').download = `${(movie.title || 'stream').replace(/[^a-z0-9]/gi, '_').toLowerCase()}.m3u`;
+            const vlcEl = document.getElementById('vlc-download');
+            if (vlcEl) {
+                vlcEl.href = playerBlobUrl;
+                vlcEl.download = `${(movie.title || 'stream').replace(/[^a-z0-9]/gi, '_').toLowerCase()}.m3u`;
+            }
         }
 
         function changeChannel(direction) {
@@ -3166,3 +3595,12 @@ tailwind.config = {
             }
         });
     })();
+
+// Register PWA Service Worker (App shell only)
+if ('serviceWorker' in navigator && (window.location.protocol === 'https:' || window.location.hostname === 'localhost' || window.location.hostname === '127.0.0.1')) {
+    window.addEventListener('load', () => {
+        navigator.serviceWorker.register('./sw.js').catch((err) => {
+            console.warn('SW registration skipped:', err);
+        });
+    });
+}

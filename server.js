@@ -14,6 +14,7 @@ const MIME_TYPES = {
   '.js': 'application/javascript; charset=utf-8',
   '.css': 'text/css; charset=utf-8',
   '.json': 'application/json; charset=utf-8',
+  '.webmanifest': 'application/manifest+json; charset=utf-8',
   '.png': 'image/png',
   '.jpg': 'image/jpeg',
   '.jpeg': 'image/jpeg',
@@ -22,7 +23,9 @@ const MIME_TYPES = {
   '.ico': 'image/x-icon',
   '.woff': 'font/woff',
   '.woff2': 'font/woff2',
-  '.ttf': 'font/ttf'
+  '.ttf': 'font/ttf',
+  '.m3u': 'audio/x-mpegurl',
+  '.m3u8': 'application/vnd.apple.mpegurl'
 };
 
 function rewriteM3U8(content, baseUrl) {
@@ -390,10 +393,14 @@ const server = http.createServer(async (req, res) => {
   });
 });
 
-server.listen(PORT, HOST, () => {
-  console.log(`\n========================================`);
-  console.log(`  AURA IPTV Web Server Running!`);
-  console.log(`  Local URL:   http://localhost:${PORT}`);
-  console.log(`  Network URL: http://${HOST === '0.0.0.0' ? 'your-ip' : HOST}:${PORT}`);
-  console.log(`========================================\n`);
-});
+if (require.main === module) {
+  server.listen(PORT, HOST, () => {
+    console.log(`\n========================================`);
+    console.log(`  AURA IPTV Web Server Running!`);
+    console.log(`  Local URL:   http://localhost:${PORT}`);
+    console.log(`  Network URL: http://${HOST === '0.0.0.0' ? 'your-ip' : HOST}:${PORT}`);
+    console.log(`========================================\n`);
+  });
+}
+
+module.exports = { server, rewriteM3U8, requestJSON, MIME_TYPES };

@@ -93,7 +93,10 @@ const Net = App.Net = {
   wrapCustom(url) {
     const p = this.proxyTemplate();
     if (!p) return url;
-    return p.includes('%s') ? p.replace('%s', encodeURIComponent(url)) : `${p.replace(/\/+$/, '')}/${encodeURIComponent(url)}`;
+    if (p.includes('%s')) return p.replace('%s', encodeURIComponent(url));
+    if (/[?&]url=$/.test(p)) return `${p}${encodeURIComponent(url)}`;
+    if (p.includes('?')) return `${p}&url=${encodeURIComponent(url)}`;
+    return `${p.replace(/\/+$/, '')}/?url=${encodeURIComponent(url)}`;
   },
   // Undo a previous proxy wrapping (server.js rewrites HLS segments to /stream?url=...).
   unwrap(url) {
@@ -102,7 +105,7 @@ const Net = App.Net = {
     if (m) return decodeURIComponent(m[1]);
     const p = this.proxyTemplate();
     if (p) {
-      const pre = p.includes('%s') ? p.split('%s')[0] : `${p.replace(/\/+$/, '')}/`;
+      const pre = p.includes('%s') ? p.split('%s')[0] : (/[?&]url=$/.test(p) ? p : `${p.replace(/\/+$/, '')}/?url=`);
       if (pre && s.startsWith(pre)) { try { return decodeURIComponent(s.slice(pre.length).split('&')[0]); } catch (_) {} }
     }
     return s;

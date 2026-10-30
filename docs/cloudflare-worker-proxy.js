@@ -33,7 +33,7 @@ export default {
     if (allowedOrigin !== '*' && origin !== allowedOrigin) return new Response('Forbidden origin', { status: 403, headers: cors });
 
     const self = new URL(request.url);
-    const target = self.searchParams.get('url');
+    const target = self.searchParams.get('url') || (self.pathname.length > 1 && self.pathname.startsWith('/http') ? decodeURIComponent(self.pathname.slice(1)) : null);
     if (!target) return new Response('Missing ?url=', { status: 400, headers: cors });
     let upstream;
     try { upstream = new URL(target); } catch (_) { return new Response('Bad url', { status: 400, headers: cors }); }

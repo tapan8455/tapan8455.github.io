@@ -126,7 +126,7 @@
         xhrSetup: viaCustomProxy ? (xhr, u) => { xhr.open('GET', Net.wrapCustom(Net.unwrap(u)), true); } : undefined
       });
       this.inst = hls;
-      hls.loadSource(viaCustomProxy ? url : Net.media(url));
+      hls.loadSource(Net.media(url));
       hls.attachMedia(v);
       hls.on(Hls.Events.MANIFEST_PARSED, () => {
         if (session !== this.session) return;

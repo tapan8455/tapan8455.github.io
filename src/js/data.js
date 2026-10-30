@@ -317,16 +317,18 @@
   };
 
   // Try the provider's HTTPS endpoints (same port, then 443). Returns { server, data } or null.
-  App.upgradeServer = async function (server, user, pass) {
+  // `attempts` (optional array) collects what was tried, for the error message.
+  App.upgradeServer = async function (server, user, pass, attempts = []) {
     let u;
     try { u = new URL(server); } catch (_) { return null; }
     if (u.protocol !== 'http:') return null;
-    const tries = [`https://${u.host}`, `https://${u.hostname}`];
+    const tries = [`https://${u.hostname}`, `https://${u.host}`];
     for (const s of [...new Set(tries)]) {
       try {
-        const data = await Net.fetchJSON(`${s}/player_api.php?username=${encodeURIComponent(user)}&password=${encodeURIComponent(pass)}`, 8000);
+        const data = await Net.fetchJSON(`${s}/player_api.php?username=${encodeURIComponent(user)}&password=${encodeURIComponent(pass)}`, 12000);
         if (data && data.user_info && Number(data.user_info.auth) !== 0) return { server: s, data };
-      } catch (_) {}
+        attempts.push(`${s} → ${data && data.user_info ? 'wrong username or password' : 'not an Xtream panel'}`);
+      } catch (e) { attempts.push(`${s} → ${e.message}`); }
     }
     return null;
   };

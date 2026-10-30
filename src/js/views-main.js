@@ -265,20 +265,25 @@
           const err = $('[data-err]', host);
           const btn = $('[data-submit]', host);
           const showErr = (msg, code) => {
-            err.innerHTML = `<div class="banner red">${ic('triangle-exclamation')}<span>${esc(msg)}${code === 'mixed' || code === 'cors' ? ` <a href="#" data-proxy>Set up a proxy</a>.` : ''}</span></div>`;
+            err.innerHTML = `<div class="banner red">${ic('triangle-exclamation')}<span style="white-space:pre-line">${esc(msg)}${code === 'mixed' || code === 'cors' ? ` <a href="#" data-proxy>Set up a proxy</a>.` : ''}</span></div>`;
             btn.disabled = false; btn.innerHTML = `${ic('plug')} ${existing ? 'Save & reconnect' : 'Connect'}`;
           };
           btn.disabled = true; btn.innerHTML = `${UI.spinner()} Connecting…`;
           let src;
           if (tab === 'xtream') {
             let server = f.server.value.trim().replace(/\/(player_api\.php|get\.php|c\/?)?(\?.*)?$/i, '').replace(/\/+$/, '');
-            if (!/^https?:\/\//i.test(server)) server = `http://${server}`;
+            if (!/^https?:\/\//i.test(server)) server = `${Net.isHttpsPage ? 'https' : 'http'}://${server}`;
             const user = f.user.value.trim(), pass = f.pass.value;
-            let res = await window.auraNative.testConnection({ server, user, pass });
-            if (!res.success && res.code === 'mixed') {
-              const up = await App.upgradeServer(server, user, pass);
+            let res;
+            const attempts = [];
+            // An HTTPS page cannot use http:// at all, so try the provider's HTTPS address first.
+            if (Net.blocked(server)) {
+              btn.innerHTML = `${UI.spinner()} Trying secure connection…`;
+              const up = await App.upgradeServer(server, user, pass, attempts);
               if (up) { server = up.server; res = { success: true, data: up.data }; }
             }
+            if (!res) res = await window.auraNative.testConnection({ server, user, pass });
+            if (!res.success && attempts.length) res.error = `Could not connect securely. Tried:\n${attempts.join('\n')}`;
             if (!res.success) return showErr(res.error || 'Could not connect', res.code);
             const ui = res.data.user_info || {};
             if (ui.status && !/active/i.test(ui.status)) return showErr(`Account status: ${ui.status}${ui.exp_date ? ` (expired ${new Date(ui.exp_date * 1000).toLocaleDateString()})` : ''}`);

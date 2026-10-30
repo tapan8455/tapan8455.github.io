@@ -92,7 +92,7 @@
       this.url = url;
       this._triedDirect = false;
       this.status('loading', { attempt: this.attempt, total: this.candidates.length });
-      if (Net.blocked(url)) this.lastError = { reason: 'mixed' };
+      this.lastError = null;
       const v = this.video;
       const failover = (why) => { if (session !== this.session) return; if (why) this.lastError = why; this.next(session); };
       const timeoutLimit = this.live ? 10000 : 7000;
@@ -630,15 +630,29 @@
     hideError();
     const url = P.engine.url || info.url || '';
     const reason = info.reason || (info.mediaCode === 4 ? 'codec' : '');
-    const mixed = reason === 'mixed' || (Net.isHttpsPage && url.startsWith('http://') && !Net.hasServer && !Net.isElectron && !Net.proxyTemplate());
-    const isMkv = /\.(mkv|avi)(\?|$)/i.test(url) || (P.item && P.item.ext === 'mkv');
+    const isMkv = /\.(mkv|avi)(\?|$)/i.test(url) || (P.item && (P.item.ext === 'mkv' || P.item.ext === 'avi'));
+    const isLive = P.kind === 'live';
+    const mixed = reason === 'mixed';
     let title = "This stream couldn't be played", desc = 'The provider did not respond with a playable stream. It may be offline or busy.';
-    if (mixed) { title = 'Insecure stream blocked'; desc = 'This site runs on HTTPS, so the browser blocks your provider\'s http:// streams. Add a proxy in Advanced setting → Connection, or open it in VLC.'; }
-    else if (reason === 'auth') { title = 'Access denied by provider'; desc = 'Your subscription may have expired or the maximum number of connections is in use.'; }
-    else if (reason === 'offline') { title = 'Stream offline'; desc = 'This channel or video is not available on the provider right now.'; }
-    else if (reason === 'codec' || isMkv) { title = 'Format not supported by the browser'; desc = 'Browsers cannot decode MKV files or some audio codecs (AC3/DTS). Open it in VLC to watch.'; }
-    else if (reason === 'media' && !isLive) { title = 'Format not supported by browser'; desc = 'This movie or episode may use an audio or video codec (such as Dolby AC3, DTS, or MKV) that web browsers cannot decode. Tap "Open in VLC" to watch.'; }
-    else if (reason === 'timeout') { title = 'Stream timed out'; desc = 'The stream did not start within 15 seconds. Try again or switch player.'; }
+    if (reason === 'auth') {
+      title = 'Access denied by provider';
+      desc = 'The provider rejected playback with HTTP 401 (auth: 0). Your account subscription may have expired or is in use on another device.';
+    } else if (isMkv || reason === 'codec') {
+      title = 'Format not supported by browser';
+      desc = 'Web browsers cannot play MKV or AVI files directly. Tap "Open in VLC" below to watch this title in VLC with full video and audio.';
+    } else if (reason === 'media' && !isLive) {
+      title = 'Format not supported by browser';
+      desc = 'This movie uses an audio or video codec that web browsers cannot decode. Tap "Open in VLC" to watch.';
+    } else if (mixed) {
+      title = 'Insecure stream blocked';
+      desc = 'This site runs on HTTPS, so the browser blocked your provider\'s http:// stream. Open in VLC, or run locally (npm run serve).';
+    } else if (reason === 'offline') {
+      title = 'Stream offline';
+      desc = 'This channel or video is not available on the provider right now.';
+    } else if (reason === 'timeout') {
+      title = 'Stream timed out';
+      desc = 'The stream did not start within 7 seconds. Try again or switch player.';
+    }
     const other = P.mode === 'native' ? 'Smart Player' : 'Native Player';
 
     const isLive = P.kind === 'live';

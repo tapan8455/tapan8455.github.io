@@ -72,12 +72,13 @@ export default {
     const finalUrl = res.url || upstream.toString();
     if (ct.includes('mpegurl') || /\.m3u8(\?|$)/i.test(finalUrl)) {
       const text = await res.text();
-      if (text.startsWith('#EXTM3U')) {
+      if (/^\s*#EXTM3U/i.test(text)) {
         const wrap = (u) => `${self.origin}/?url=${encodeURIComponent(new URL(u, finalUrl).toString())}`;
         const body = text.split(/\r?\n/).map(line => {
-          if (!line) return line;
-          if (line.startsWith('#')) return line.replace(/URI="([^"]+)"/g, (_, u) => `URI="${wrap(u)}"`);
-          return wrap(line.trim());
+          if (!line || !line.trim()) return line;
+          const trimmed = line.trim();
+          if (trimmed.startsWith('#')) return line.replace(/URI="?([^",\s]+)"?/g, (_, u) => `URI="${wrap(u)}"`);
+          return wrap(trimmed);
         }).join('\n');
         out.set('Content-Type', 'application/vnd.apple.mpegurl');
         out.delete('Content-Length');

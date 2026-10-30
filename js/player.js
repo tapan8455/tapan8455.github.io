@@ -109,7 +109,16 @@
       const v = this.video;
       v.src = Net.media(url);
       if (this.startAt > 0) { const t = this.startAt; v.addEventListener('loadedmetadata', () => { if (session === this.session && v.duration > t) v.currentTime = t; }, { once: true }); }
-      v.play().catch(e => { if (session === this.session && e.name !== 'NotAllowedError' && e.name !== 'AbortError') failover({ reason: 'media', msg: e.message }); else if (e.name === 'NotAllowedError') this.status('paused'); });
+      v.play().catch(e => {
+        if (session !== this.session) return;
+        if (e.name === 'NotAllowedError') {
+          // iOS Safari blocks unmuted autoplay. Mute and retry so stream starts playing immediately.
+          v.muted = true;
+          v.play().then(() => hud('Muted for autoplay · Tap screen to unmute')).catch(() => this.status('paused'));
+        } else if (e.name !== 'AbortError') {
+          failover({ reason: 'media', msg: e.message });
+        }
+      });
     }
 
     playHls(url, session, failover) {
@@ -136,7 +145,12 @@
           if (idx > -1) hls.currentLevel = idx;
         }
         this.hooks.onLevels && this.hooks.onLevels();
-        v.play().catch(() => {});
+        v.play().catch(e => {
+          if (e && e.name === 'NotAllowedError') {
+            v.muted = true;
+            v.play().then(() => hud('Muted for autoplay · Tap screen to unmute')).catch(() => {});
+          }
+        });
       });
       hls.on(Hls.Events.LEVEL_LOADED, (_, d) => { if (session === this.session && d && d.details) this.hooks.onLive && this.hooks.onLive(!!d.details.live); });
       hls.on(Hls.Events.LEVEL_SWITCHED, () => { if (session === this.session) this.hooks.onLevels && this.hooks.onLevels(); });
@@ -682,6 +696,7 @@
 
   /* ---------------------------------------------------------------- controls */
   function togglePlay() {
+    if (video.muted) { video.muted = false; hud('Unmuted'); }
     if (video.paused) { video.play().catch(() => {}); } else video.pause();
     haptic();
   }

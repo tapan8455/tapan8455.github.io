@@ -208,6 +208,11 @@
     /* ----------------------------------------------------------- sync */
     async sync(src, onProgress = () => {}) {
       if (src.type === 'm3u') return this.syncM3U(src, onProgress);
+      // On an HTTPS page an http:// provider is unreachable; switch to its HTTPS address if it has one.
+      if (Net.blocked(src.server)) {
+        const up = await App.upgradeServer(src.server, src.user, src.pass);
+        if (up) { Sources.update(src.id, { server: up.server }); src.server = up.server; }
+      }
       const raw = this.empty();
       const api = (action, params = '', timeout = 30000) => window.auraNative.apiRequest({ server: src.server, user: src.user, pass: src.pass, action, params, timeout });
       const errors = {};
@@ -250,11 +255,11 @@
           }
           onProgress({ type: t, state: 'done', count: raw[t].items.length });
         } catch (e) {
-          errors[t] = e.message;
+          errors[t] = e;
           onProgress({ type: t, state: 'error', count: 0, error: e.message });
         }
       }
-      if (errors.live && errors.movie && errors.series) throw new Error(errors.live);
+      if (errors.live && errors.movie && errors.series) throw errors.live;
       raw.at = Date.now();
       await IDB.set(`catalog:${src.id}`, raw);
       Sources.update(src.id, { lastRefreshed: raw.at, counts: { live: raw.live.items.length, movie: raw.movie.items.length, series: raw.series.items.length } });
@@ -309,6 +314,21 @@
       if (!opt || !opt.ms || !src) return false;
       return !src.lastRefreshed || Date.now() - src.lastRefreshed > opt.ms;
     }
+  };
+
+  // Try the provider's HTTPS endpoints (same port, then 443). Returns { server, data } or null.
+  App.upgradeServer = async function (server, user, pass) {
+    let u;
+    try { u = new URL(server); } catch (_) { return null; }
+    if (u.protocol !== 'http:') return null;
+    const tries = [`https://${u.host}`, `https://${u.hostname}`];
+    for (const s of [...new Set(tries)]) {
+      try {
+        const data = await Net.fetchJSON(`${s}/player_api.php?username=${encodeURIComponent(user)}&password=${encodeURIComponent(pass)}`, 8000);
+        if (data && data.user_info && Number(data.user_info.auth) !== 0) return { server: s, data };
+      } catch (_) {}
+    }
+    return null;
   };
 
   /* ---------------------------------------------------------------- provider API */

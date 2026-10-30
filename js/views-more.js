@@ -554,6 +554,13 @@
         <div class="banner blue" style="margin-top:0">${ic('circle-info')}<span>${esc(env)}</span></div>
         <label class="label">CORS proxy URL</label>
         <div class="field">${ic('link')}<input data-proxy value="${esc(Net.proxyTemplate())}" placeholder="https://my-proxy.workers.dev/?url=%s" inputmode="url" autocomplete="off"></div>
+        <div class="set-card" style="margin-top:18px"><h3 style="margin:0 0 10px;font-size:18px">Set up a free proxy (Cloudflare)</h3>
+          <ol class="muted" style="margin:0;padding-left:20px;line-height:1.6;font-size:15px">
+            <li>Sign in at <a href="https://dash.cloudflare.com" target="_blank" rel="noopener">dash.cloudflare.com</a> → Workers &amp; Pages → Create → Hello World worker.</li>
+            <li>Tap <b>Copy worker code</b> below, replace the worker's code with it, then Deploy.</li>
+            <li>Paste <code>https://YOUR-WORKER.workers.dev/?url=%s</code> above and tap Save.</li>
+          </ol>
+          <button class="btn secondary sm" style="margin-top:14px" data-copy-worker>${ic('copy')} Copy worker code</button></div>
         <p class="muted" style="font-size:14px;line-height:1.5;margin:10px 4px 0">Use <code>%s</code> where the encoded target URL goes, or give a prefix and the URL is appended. Deploy your own free proxy with <code>docs/cloudflare-worker-proxy.js</code> or run <code>server.js</code> — see <code>docs/PROXY.md</code>. Your credentials pass through this proxy, so only use one you control.</p>
         <div class="set-card" style="margin-top:18px"><div class="set-row"><span class="tile c-blue">${ic('image')}</span><span class="grow"><h3>Proxy posters &amp; logos</h3><p>Load http:// artwork through the proxy</p></span><label class="toggle"><input type="checkbox" data-pimg ${localStorage.getItem('aura_proxy_images') === '1' ? 'checked' : ''}><span></span></label></div></div>
         <div class="set-card"><div class="set-row"><span class="tile c-orange">${ic('route')}</span><span class="grow"><h3>Proxy all streams</h3><p>Also relay https:// streams (for providers without CORS)</p></span><label class="toggle"><input type="checkbox" data-pall ${localStorage.getItem('aura_proxy_all') === '1' ? 'checked' : ''}><span></span></label></div></div>
@@ -576,6 +583,13 @@
             else if (Net.proxyTemplate()) { const r = await fetch(Net.wrapCustom('https://example.com/'), { signal: AbortSignal.timeout(10000) }); res.innerHTML = r.ok ? `<span style="color:var(--green)">${ic('circle-check')} Proxy responded</span>` : `Proxy returned HTTP ${r.status}`; }
             else res.textContent = 'Add a proxy URL or a playlist to test.';
           } catch (e) { res.innerHTML = `<span style="color:#ff6b61">${ic('triangle-exclamation')} ${esc(e.message)}</span>`; }
+        };
+        $('[data-copy-worker]', ctx.el).onclick = async () => {
+          try {
+            const code = await (await fetch('./docs/cloudflare-worker-proxy.js')).text();
+            await navigator.clipboard.writeText(code);
+            UI.toast('Worker code copied', { icon: 'copy' });
+          } catch (_) { window.open('./docs/cloudflare-worker-proxy.js', '_blank', 'noopener'); }
         };
         $('[data-save]', ctx.el).onclick = () => { save(); UI.toast('Connection settings saved', { icon: 'shield-halved' }); Router.markDirty(); ctx.close(); };
       },

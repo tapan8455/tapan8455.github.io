@@ -274,7 +274,11 @@
             let server = f.server.value.trim().replace(/\/(player_api\.php|get\.php|c\/?)?(\?.*)?$/i, '').replace(/\/+$/, '');
             if (!/^https?:\/\//i.test(server)) server = `http://${server}`;
             const user = f.user.value.trim(), pass = f.pass.value;
-            const res = await window.auraNative.testConnection({ server, user, pass });
+            let res = await window.auraNative.testConnection({ server, user, pass });
+            if (!res.success && res.code === 'mixed') {
+              const up = await App.upgradeServer(server, user, pass);
+              if (up) { server = up.server; res = { success: true, data: up.data }; }
+            }
             if (!res.success) return showErr(res.error || 'Could not connect', res.code);
             const ui = res.data.user_info || {};
             if (ui.status && !/active/i.test(ui.status)) return showErr(`Account status: ${ui.status}${ui.exp_date ? ` (expired ${new Date(ui.exp_date * 1000).toLocaleDateString()})` : ''}`);
@@ -330,7 +334,8 @@
       Router.go('home');
       Bus.emit('sources');
     } catch (e) {
-      render(`<div class="banner red" style="margin-top:18px">${ic('triangle-exclamation')}<span>${esc(e.message)}${e.code === 'mixed' || e.code === 'cors' ? ' — configure a proxy in Connection settings.' : ''}</span></div>
+      const needsProxy = e.code === 'mixed' || e.code === 'cors';
+      render(`${needsProxy ? `<div class="banner" style="margin-top:18px">${ic('shield-halved')}<span><b>${e.code === 'mixed' ? 'Your provider only works over http://' : 'Your provider blocks browser requests'}</b>, and this site runs on HTTPS, so the browser refuses to connect. Add a free proxy once (about 3 minutes) in <b>Connection settings</b>, or open the app from a local server (<code>npm run serve</code>) or the desktop app.</span></div>` : `<div class="banner red" style="margin-top:18px">${ic('triangle-exclamation')}<span>${esc(e.message)}</span></div>`}
         <div class="btn-row" style="margin-top:18px"><button class="btn secondary" data-x="back">Back</button><button class="btn" data-x="retry">Retry</button></div>
         ${e.code === 'mixed' || e.code === 'cors' ? `<button class="btn ghost" style="margin-top:12px" data-x="proxy">${ic('shield-halved')} Connection settings</button>` : ''}`);
       ov.addEventListener('click', (ev) => {

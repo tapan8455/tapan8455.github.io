@@ -43,8 +43,14 @@
     load(candidates, { mode = 'smart', live = false, startAt = 0 } = {}) {
       this.teardown();
       const session = ++this.session;
-      this.candidates = candidates.slice();
-      this.mode = mode; this.live = live; this.startAt = startAt; this.attempt = 0; this.reconnects = 0; this.lastError = null;
+      let list = candidates.slice();
+      if (!Net.isElectron && !live) {
+        const mp4s = list.filter(u => /\.mp4(\?|$)/i.test(u));
+        const others = list.filter(u => !/\.mp4(\?|$)/i.test(u));
+        list = mp4s.length ? [...mp4s, ...others] : list;
+      }
+      this.candidates = list;
+      this.mode = mode; this.live = live; this.startAt = startAt; this.attempt = 0; this.reconnects = 0; this.lastError = null; this.started = false;
       this._fallbackTried = false;
       this.attachEvents(session);
       this.status('loading');
@@ -89,7 +95,7 @@
       const failover = (why) => { if (session !== this.session) return; if (why) this.lastError = why; this.next(session); };
       const timeoutLimit = this.live ? 10000 : 15000;
       this.watchdog = setTimeout(() => {
-        if (session === this.session && (v.readyState < 2)) { this.lastError = this.lastError || { reason: 'timeout' }; failover(); }
+        if (session === this.session && (v.readyState < 2 || (v.currentTime === 0 && !this.started))) { this.lastError = this.lastError || { reason: 'timeout' }; failover(); }
       }, timeoutLimit);
       const isHls = /\.m3u8(\?|$)/i.test(url);
       const isTs = /\.ts(\?|$)/i.test(url) || (!/\.(mp4|mkv|webm|mov|avi|m4v)(\?|$)/i.test(url) && this.live);
@@ -235,7 +241,7 @@
             }, 9000);
           }
         },
-        playing: () => { if (session !== this.session) return; clearTimeout(this.watchdog); clearTimeout(this.stallTimer); this.reconnects = 0; this.status('playing'); },
+        playing: () => { if (session !== this.session) return; this.started = true; clearTimeout(this.watchdog); clearTimeout(this.stallTimer); this.reconnects = 0; this.status('playing'); },
         pause: () => { if (session === this.session && v.readyState >= 2) this.status('paused'); },
         canplay: () => { if (session === this.session) clearTimeout(this.watchdog); },
         error: () => {

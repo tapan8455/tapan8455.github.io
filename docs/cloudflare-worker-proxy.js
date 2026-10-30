@@ -47,10 +47,16 @@ export default {
     const headers = { 'User-Agent': 'IPTVSmartersPro', 'Accept': '*/*' };
     const range = request.headers.get('Range');
     if (range) headers.Range = range;
-    const res = await fetch(upstream.toString(), { method: request.method === 'HEAD' ? 'HEAD' : 'GET', headers, redirect: 'follow' });
+    const res = await fetch(upstream.toString(), {
+      method: request.method === 'HEAD' ? 'HEAD' : 'GET',
+      headers,
+      redirect: 'follow',
+      cache: 'no-store'
+    });
 
     const out = new Headers(cors);
     ['Content-Type', 'Content-Length', 'Content-Range', 'Accept-Ranges', 'Cache-Control'].forEach(h => { const v = res.headers.get(h); if (v) out.set(h, v); });
+    if (!out.has('Accept-Ranges')) out.set('Accept-Ranges', 'bytes');
 
     // Rewrite HLS playlists so every segment / key / child playlist also goes through this worker.
     const ct = (res.headers.get('Content-Type') || '').toLowerCase();

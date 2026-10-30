@@ -40,7 +40,9 @@
     if (series.url) return App.Player.play(Object.assign({}, series, { type: 'movie' }), { kind: 'movie' });
     let info;
     try { info = await Api.seriesInfo(series.id); } catch (e) { return UI.toast(`Could not load episodes: ${e.message}`, { icon: 'triangle-exclamation' }); }
-    const all = info.seasonList.flatMap(s => info.seasons[s]);
+    if (!info || !info.seasons) return UI.toast('Could not parse series information', { icon: 'triangle-exclamation' });
+    const seasonList = info.seasonList || Object.keys(info.seasons || {});
+    const all = seasonList.flatMap(s => (info.seasons && info.seasons[s]) || []);
     if (!all.length) return UI.toast('No episodes available for this series', { icon: 'triangle-exclamation' });
     let ep = epId && all.find(e => e.id === String(epId));
     if (!ep && !season) {
@@ -52,8 +54,8 @@
     }
     if (!ep && season) ep = info.seasons[season] && info.seasons[season][0];
     ep = ep || all[0];
-    const list = info.seasons[String(ep.season)] || info.seasons[info.seasonList.find(s => info.seasons[s].includes(ep))] || all;
-    const meta = { id: series.id, name: series.name || info.info.name, icon: series.icon || info.info.cover, cat: series.cat };
+    const list = (info.seasons && info.seasons[String(ep.season)]) || (info.seasons && seasonList.find(s => info.seasons[s] && info.seasons[s].includes(ep)) && info.seasons[seasonList.find(s => info.seasons[s] && info.seasons[s].includes(ep))]) || all;
+    const meta = { id: series.id, name: series.name || (info.info && info.info.name) || 'Series', icon: series.icon || (info.info && info.info.cover) || '', cat: series.cat };
     App.Player.play(ep, { kind: 'episode', list, series: meta, startAt });
   };
 
@@ -797,14 +799,24 @@
       };
     };
     renderSeries();
-    Api.seriesInfo(item.id).then(d => {
-      info = d;
-      const sp = User.getSeriesProgress(item.id);
-      season = sp && d.seasons[String(sp.season)] ? String(sp.season) : d.seasonList[0];
-      const i = d.info || {};
-      setHero((Array.isArray(i.backdrop_path) ? i.backdrop_path[0] : i.backdrop_path) || i.cover || item.icon);
-      renderSeries();
-    }).catch(e => { body.innerHTML = `<div class="banner red">${ic('triangle-exclamation')}<span>Could not load episodes: ${esc(e.message)}</span></div>`; });
+    const fetchEpisodes = () => {
+      Api.seriesInfo(item.id).then(d => {
+        info = d;
+        const sp = User.getSeriesProgress(item.id);
+        season = sp && d.seasons[String(sp.season)] ? String(sp.season) : d.seasonList[0];
+        const i = d.info || {};
+        setHero((Array.isArray(i.backdrop_path) ? i.backdrop_path[0] : i.backdrop_path) || i.cover || item.icon);
+        renderSeries();
+      }).catch(e => {
+        body.innerHTML = `<div class="banner red" style="display:flex;align-items:center;justify-content:space-between;gap:14px">
+          <div>${ic('triangle-exclamation')} <span>Could not load episodes: ${esc(e.message)}</span></div>
+          <button class="btn sm secondary" data-retry-series>${ic('rotate-right')} Retry</button>
+        </div>`;
+        const rb = $('[data-retry-series]', body);
+        if (rb) rb.onclick = () => { body.innerHTML = `${UI.skeletonRail(1, 600, 64).replace('rail scroll-x', '')}`; fetchEpisodes(); };
+      });
+    };
+    fetchEpisodes();
     const off = Bus.on('progress', () => { if (!el.hidden && info) renderSeries(); });
     return { onHide: off };
   };

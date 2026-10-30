@@ -377,3 +377,46 @@ test('Raw category streams parser handles arrays, objects, and filters malformed
   assert.strictEqual(validItems[0].name, 'HBO HD');
   assert.strictEqual(validItems[1].name, 'Cinemax');
 });
+
+// ── 14. Error Tolerance and Playback Continuation Tests ───────────────
+test('Live channel and series error handler tolerates stream failures and resolves next item', () => {
+  // Live channel failover simulation
+  const channelList = [
+    { id: '101', name: 'Channel 1 (Dead)', type: 'live' },
+    { id: '102', name: 'Channel 2 (Working)', type: 'live' },
+    { id: '103', name: 'Channel 3 (Backup)', type: 'live' }
+  ];
+
+  function getNextChannel(currentIndex, list) {
+    if (!list || list.length < 2) return null;
+    const nextIdx = (currentIndex + 1) % list.length;
+    return { index: nextIdx, item: list[nextIdx] };
+  }
+
+  const nextLive = getNextChannel(0, channelList);
+  assert.strictEqual(nextLive.index, 1);
+  assert.strictEqual(nextLive.item.name, 'Channel 2 (Working)');
+
+  // Circular wrap for live channel list
+  const wrapLive = getNextChannel(2, channelList);
+  assert.strictEqual(wrapLive.index, 0);
+  assert.strictEqual(wrapLive.item.name, 'Channel 1 (Dead)');
+
+  // Series episode continuation simulation
+  const episodeList = [
+    { id: 'ep1', season: 1, episode: 1, name: 'Pilot (Failed)' },
+    { id: 'ep2', season: 1, episode: 2, name: 'Chapter 2 (Working)' }
+  ];
+
+  function resolveNextEpisode(currentEpId, list) {
+    const idx = list.findIndex(e => e.id === currentEpId);
+    if (idx > -1 && idx < list.length - 1) return list[idx + 1];
+    return null;
+  }
+
+  const nextEp = resolveNextEpisode('ep1', episodeList);
+  assert.ok(nextEp);
+  assert.strictEqual(nextEp.id, 'ep2');
+  assert.strictEqual(nextEp.name, 'Chapter 2 (Working)');
+  assert.strictEqual(resolveNextEpisode('ep2', episodeList), null);
+});

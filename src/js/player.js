@@ -45,6 +45,7 @@
       const session = ++this.session;
       this.candidates = candidates.slice();
       this.mode = mode; this.live = live; this.startAt = startAt; this.attempt = 0; this.reconnects = 0; this.lastError = null;
+      this._fallbackTried = false;
       this.attachEvents(session);
       this.status('loading');
       if (!candidates.length) return this.fail({ reason: 'nourl' });
@@ -60,16 +61,36 @@
     next(session) {
       if (session !== this.session) return;
       this.teardown();
-      if (this.attempt >= this.candidates.length) return this.fail({ reason: this.lastError && this.lastError.reason });
+      if (this.attempt >= this.candidates.length) {
+        if (!this._fallbackTried && this.candidates.length > 0) {
+          this._fallbackTried = true;
+          this.attempt = 0;
+          this.mode = this.mode === 'smart' ? 'native' : 'smart';
+          const url = this.candidates[this.attempt++];
+          this.url = url;
+          const failover = (why) => { if (session !== this.session) return; if (why) this.lastError = why; this.next(session); };
+          try {
+            if (this.mode === 'smart') {
+              const isHls = /\.m3u8(\?|$)/i.test(url);
+              const isTs = /\.ts(\?|$)/i.test(url) || (!/\.(mp4|mkv|webm|mov|avi|m4v)(\?|$)/i.test(url) && this.live);
+              if (isHls && window.Hls && Hls.isSupported()) return this.playHls(url, session, failover);
+              if (isTs && !isHls && window.mpegts && mpegts.getFeatureList().mseLivePlayback) return this.playTs(url, session, failover);
+            }
+            return this.playNative(url, session, failover);
+          } catch (_) {}
+        }
+        return this.fail({ reason: this.lastError && this.lastError.reason });
+      }
       const url = this.candidates[this.attempt++];
       this.url = url;
       this.status('loading', { attempt: this.attempt, total: this.candidates.length });
       if (Net.blocked(url)) { this.lastError = { reason: 'mixed' }; return this.next(session); }
       const v = this.video;
       const failover = (why) => { if (session !== this.session) return; if (why) this.lastError = why; this.next(session); };
+      const timeoutLimit = this.live ? 10000 : 15000;
       this.watchdog = setTimeout(() => {
         if (session === this.session && (v.readyState < 2)) { this.lastError = this.lastError || { reason: 'timeout' }; failover(); }
-      }, 15000);
+      }, timeoutLimit);
       const isHls = /\.m3u8(\?|$)/i.test(url);
       const isTs = /\.ts(\?|$)/i.test(url) || (!/\.(mp4|mkv|webm|mov|avi|m4v)(\?|$)/i.test(url) && this.live);
       const nativeHls = !!v.canPlayType('application/vnd.apple.mpegurl');
@@ -175,11 +196,40 @@
       const v = this.video;
       this.detachEvents();
       const h = {
-        waiting: () => { if (session !== this.session) return; this.status('buffering'); if (this.live && !v.paused) { clearTimeout(this.stallTimer); this.stallTimer = setTimeout(() => { if (session === this.session && !v.paused && v.readyState < 3 && this.reconnects < 5) this.reconnect(session); }, 6000); } },
+        waiting: () => {
+          if (session !== this.session) return;
+          this.status('buffering');
+          if (this.live && !v.paused) {
+            clearTimeout(this.stallTimer);
+            this.stallTimer = setTimeout(() => {
+              if (session === this.session && !v.paused && v.readyState < 3) {
+                if (this.reconnects < 5) this.reconnect(session);
+                else { this.lastError = { reason: 'stalled' }; this.next(session); }
+              }
+            }, 6000);
+          } else if (!this.live && !v.paused && v.currentTime > 0) {
+            clearTimeout(this.stallTimer);
+            this.stallTimer = setTimeout(() => {
+              if (session === this.session && !v.paused && v.readyState < 3) {
+                const cur = v.currentTime;
+                if (this.inst && this.inst.startLoad) {
+                  try { this.inst.startLoad(); return; } catch (_) {}
+                }
+                this.startAt = cur;
+                this.next(session);
+              }
+            }, 9000);
+          }
+        },
         playing: () => { if (session !== this.session) return; clearTimeout(this.watchdog); clearTimeout(this.stallTimer); this.reconnects = 0; this.status('playing'); },
         pause: () => { if (session === this.session && v.readyState >= 2) this.status('paused'); },
         canplay: () => { if (session === this.session) clearTimeout(this.watchdog); },
-        error: () => { if (session !== this.session || !v.getAttribute('src') && !this.inst) return; if (this.inst) return; this.lastError = { reason: v.error && v.error.code === 4 ? 'codec' : 'media' }; this.next(session); },
+        error: () => {
+          if (session !== this.session) return;
+          const code = v.error ? v.error.code : 0;
+          this.lastError = { reason: code === 4 ? 'codec' : code === 3 ? 'decode' : 'media', mediaCode: code };
+          this.next(session);
+        },
         ended: () => { if (session !== this.session) return; if (this.live && this.reconnects < 5) this.reconnect(session); else this.status('ended'); }
       };
       Object.entries(h).forEach(([k, f]) => v.addEventListener(k, f));
@@ -347,6 +397,7 @@
     closeNextCard();
     P.aspect = 0; applyAspect();
     video.playbackRate = P.rate = 1;
+    clearFailover();
     P.engine.load(App.streamCandidates(item, kind), { mode: mode === 'native' ? 'native' : 'smart', live: kind === 'live', startAt: P.startAt });
     renderSeek();
     wake();
@@ -357,6 +408,8 @@
   P.close = function () { if (P.open && P.entry) UI.Overlay.close(P.entry); };
 
   function teardown() {
+    clearFailover();
+    closeNextCard();
     saveProgress();
     P.engine.destroy();
     P.open = false;
@@ -515,13 +568,15 @@
   function closeNextCard() { clearInterval(nextTimer); $$('.next-card', root || document).forEach(e => e.remove()); }
 
   /* ---------------------------------------------------------------- errors */
-  function hideError() { $$('.p-err', root || document).forEach(e => e.remove()); }
+  let failoverTimer = null;
+  function clearFailover() { if (failoverTimer) { clearInterval(failoverTimer); failoverTimer = null; } }
+  function hideError() { clearFailover(); $$('.p-err', root || document).forEach(e => e.remove()); }
   function showError(info) {
     hideError();
     const url = P.engine.url || info.url || '';
     const reason = info.reason || (info.mediaCode === 4 ? 'codec' : '');
     const mixed = reason === 'mixed' || (Net.isHttpsPage && url.startsWith('http://') && !Net.hasServer && !Net.isElectron && !Net.proxyTemplate());
-    const isMkv = /\.(mkv|avi)(\?|$)/i.test(url) || P.item.ext === 'mkv';
+    const isMkv = /\.(mkv|avi)(\?|$)/i.test(url) || (P.item && P.item.ext === 'mkv');
     let title = "This stream couldn't be played", desc = 'The provider did not respond with a playable stream. It may be offline or busy.';
     if (mixed) { title = 'Insecure stream blocked'; desc = 'This site runs on HTTPS, so the browser blocks your provider\'s http:// streams. Add a proxy in Advanced setting → Connection, or open it in VLC.'; }
     else if (reason === 'auth') { title = 'Access denied by provider'; desc = 'Your subscription may have expired or the maximum number of connections is in use.'; }
@@ -529,6 +584,74 @@
     else if (reason === 'codec' || isMkv) { title = 'Format not supported by the browser'; desc = 'Browsers cannot decode MKV files or some audio codecs (AC3/DTS). Open it in VLC to watch.'; }
     else if (reason === 'timeout') { title = 'Stream timed out'; desc = 'The stream did not start within 15 seconds. Try again or switch player.'; }
     const other = P.mode === 'native' ? 'Smart Player' : 'Native Player';
+
+    const isLive = P.kind === 'live';
+    const hasNextLive = isLive && P.list && P.list.length > 1;
+    const nextEp = P.kind === 'episode' ? nextEpisode() : null;
+
+    // Graceful auto-continuation for playlists: tolerate errors and keep playing!
+    if (hasNextLive || nextEp) {
+      let left = isLive ? 3 : 4;
+      const targetLabel = isLive ? 'next channel' : `next episode (S${nextEp.season} E${nextEp.episode})`;
+      const card = document.createElement('div');
+      card.className = 'p-err';
+      card.innerHTML = `<div class="box" role="alertdialog" aria-label="${esc(title)}">
+        <div class="tile c-orange">${ic('forward-step')}</div>
+        <h3>Stream issue · Continuing playback</h3>
+        <p>${esc(title)}. Auto-recovering to avoid playback interruption.</p>
+        <div class="banner blue" style="margin:14px 0;font-size:15px">
+          ${ic('rotate')} <span>Switching to <b>${esc(targetLabel)}</b> in <b data-sec>${left}</b>s…</span>
+        </div>
+        <div class="acts">
+          <button class="btn" data-e="proceed">${ic('forward-step')} Switch now</button>
+          <button class="btn secondary" data-e="cancel">${ic('hand')} Pause &amp; options</button>
+          <button class="btn secondary" data-e="retry">${ic('rotate-right')} Retry stream</button>
+          <button class="btn secondary" data-e="close">${ic('xmark')} Exit</button>
+        </div>
+      </div>`;
+
+      card.addEventListener('click', (e) => {
+        e.stopPropagation();
+        const b = e.target.closest('[data-e]');
+        if (!b) return;
+        clearFailover();
+        const act = b.dataset.e;
+        if (act === 'proceed') {
+          hideError();
+          if (isLive) step(1);
+          else playNextEpisode();
+        } else if (act === 'cancel') {
+          renderErrorBox(info, title, desc, url, reason, mixed, other);
+        } else if (act === 'retry') {
+          hideError();
+          P.play(P.item, { kind: P.kind, list: P.list, series: P.series, mode: P.mode, forceInternal: true, startAt: P.startAt });
+        } else {
+          P.close();
+        }
+      });
+
+      root.classList.remove('idle');
+      root.appendChild(card);
+
+      failoverTimer = setInterval(() => {
+        left--;
+        const sec = $('[data-sec]', card);
+        if (sec) sec.textContent = left;
+        if (left <= 0) {
+          clearFailover();
+          hideError();
+          if (isLive) step(1);
+          else playNextEpisode();
+        }
+      }, 1000);
+      return;
+    }
+
+    renderErrorBox(info, title, desc, url, reason, mixed, other);
+  }
+
+  function renderErrorBox(info, title, desc, url, reason, mixed, other) {
+    hideError();
     const box = document.createElement('div');
     box.className = 'p-err';
     box.innerHTML = `<div class="box" role="alertdialog" aria-label="${esc(title)}">

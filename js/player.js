@@ -92,7 +92,7 @@
       this.url = url;
       this._triedDirect = false;
       this.status('loading', { attempt: this.attempt, total: this.candidates.length });
-      if (Net.blocked(url)) { this.lastError = { reason: 'mixed' }; return this.next(session); }
+      if (Net.blocked(url)) this.lastError = { reason: 'mixed' };
       const v = this.video;
       const failover = (why) => { if (session !== this.session) return; if (why) this.lastError = why; this.next(session); };
       const timeoutLimit = this.live ? 10000 : 7000;

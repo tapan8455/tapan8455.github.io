@@ -566,14 +566,35 @@
         <div class="set-card" style="margin-top:18px"><div class="set-row"><span class="tile c-blue">${ic('image')}</span><span class="grow"><h3>Proxy posters &amp; logos</h3><p>Load http:// artwork through the proxy</p></span><label class="toggle"><input type="checkbox" data-pimg ${localStorage.getItem('aura_proxy_images') === '1' ? 'checked' : ''}><span></span></label></div></div>
         <div class="set-card"><div class="set-row"><span class="tile c-orange">${ic('route')}</span><span class="grow"><h3>Proxy all streams</h3><p>Also relay https:// streams (for providers without CORS)</p></span><label class="toggle"><input type="checkbox" data-pall ${localStorage.getItem('aura_proxy_all') === '1' ? 'checked' : ''}><span></span></label></div></div>
         <div class="btn-row" style="margin-top:8px"><button class="btn secondary" data-test>${ic('signal')} Test</button><button class="btn" data-save>Save</button></div>
+        ${Net.proxyTemplate() ? `<button class="btn secondary" data-remove-proxy style="width:100%;margin-top:10px;color:#ff6b61;border-color:rgba(255,107,97,0.3)">${ic('trash')} Remove Proxy (Direct Mode)</button>` : ''}
         <p class="muted" data-res style="margin-top:14px;text-align:center"></p></div>`,
       mount(ctx) {
         const save = () => {
           const v = $('[data-proxy]', ctx.el).value.trim();
-          if (v) localStorage.setItem('aura_custom_proxy', v); else localStorage.removeItem('aura_custom_proxy');
-          localStorage.setItem('aura_proxy_images', $('[data-pimg]', ctx.el).checked ? '1' : '0');
-          localStorage.setItem('aura_proxy_all', $('[data-pall]', ctx.el).checked ? '1' : '0');
+          if (v) {
+            localStorage.setItem('aura_custom_proxy', v);
+            localStorage.setItem('aura_proxy_images', $('[data-pimg]', ctx.el).checked ? '1' : '0');
+            localStorage.setItem('aura_proxy_all', $('[data-pall]', ctx.el).checked ? '1' : '0');
+          } else {
+            localStorage.removeItem('aura_custom_proxy');
+            localStorage.removeItem('aura_proxy_images');
+            localStorage.removeItem('aura_proxy_all');
+          }
         };
+        const remBtn = $('[data-remove-proxy]', ctx.el);
+        if (remBtn) {
+          remBtn.onclick = () => {
+            localStorage.removeItem('aura_custom_proxy');
+            localStorage.removeItem('aura_proxy_images');
+            localStorage.removeItem('aura_proxy_all');
+            $('[data-proxy]', ctx.el).value = '';
+            $('[data-pimg]', ctx.el).checked = false;
+            $('[data-pall]', ctx.el).checked = false;
+            UI.toast('Proxy removed — direct mode active', { icon: 'circle-check' });
+            Router.markDirty();
+            ctx.close();
+          };
+        }
         $('[data-test]', ctx.el).onclick = async () => {
           save();
           const res = $('[data-res]', ctx.el);

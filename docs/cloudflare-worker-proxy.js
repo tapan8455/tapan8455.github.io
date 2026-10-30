@@ -58,6 +58,15 @@ export default {
     ['Content-Type', 'Content-Length', 'Content-Range', 'Accept-Ranges', 'Cache-Control'].forEach(h => { const v = res.headers.get(h); if (v) out.set(h, v); });
     if (!out.has('Accept-Ranges')) out.set('Accept-Ranges', 'bytes');
 
+    // Force proper MIME type for video streaming (providers often return generic application/octet-stream).
+    const targetPath = (upstream.pathname || '').toLowerCase();
+    const rawCt = (res.headers.get('Content-Type') || '').toLowerCase();
+    if (/\.(mp4|m4v)(\?|$)/i.test(targetPath) || ((rawCt === 'application/octet-stream' || !rawCt) && !/\.(m3u8|json)(\?|$)/i.test(targetPath))) {
+      out.set('Content-Type', 'video/mp4');
+    } else if (/\.ts(\?|$)/i.test(targetPath)) {
+      out.set('Content-Type', 'video/mp2t');
+    }
+
     // Rewrite HLS playlists so every segment / key / child playlist also goes through this worker.
     const ct = (res.headers.get('Content-Type') || '').toLowerCase();
     const finalUrl = res.url || upstream.toString();

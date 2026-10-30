@@ -404,7 +404,7 @@
           { label: 'Series', icon: 'layer-group', tile: 'c-green', on: type === 'series', onClick: () => setType('series') },
           { sep: true },
           { label: 'Manage Categories', icon: 'sliders', tile: 'c-gray', chevron: true, onClick: () => V.manageCategories(type) }
-        ], { width: 'min(380px, 64vw)' });
+        ], { width: 'min(320px, calc(100vw - 32px))' });
       }
     });
 

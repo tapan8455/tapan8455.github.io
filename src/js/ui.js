@@ -299,7 +299,7 @@
     $('#search-fab').classList.toggle('on', name === 'search');
     const hl = $('#tabbar .hl');
     const on = btns.find(b => b.dataset.tab === name);
-    if (on) { hl.style.opacity = 1; hl.style.width = `${on.offsetWidth}px`; hl.style.transform = `translateX(${on.offsetLeft - 6}px)`; }
+    if (on) { hl.style.opacity = 1; hl.style.width = `${on.offsetWidth}px`; hl.style.transform = `translateX(${on.offsetLeft}px)`; }
     else hl.style.opacity = 0;
     $$('.fab-cats').forEach(f => f.classList.toggle('hidden', name !== 'home'));
     document.body.classList.toggle('has-sidebar', !!App.Sources.active);

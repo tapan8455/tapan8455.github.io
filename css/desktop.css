@@ -115,7 +115,7 @@ img.fade.in { opacity: 1; }
   .hero-card::after { background: linear-gradient(90deg, rgba(0,0,0,.82) 0%, rgba(0,0,0,.45) 42%, rgba(0,0,0,0) 70%), linear-gradient(0deg, rgba(0,0,0,.55) 0%, rgba(0,0,0,0) 45%); }
   .hero-card .hero-fg { display: block; position: absolute; right: 7%; top: 50%; transform: translateY(-50%); height: 84%; width: auto; aspect-ratio: 2 / 3; object-fit: cover; border-radius: 16px; z-index: 1; box-shadow: 0 24px 60px rgba(0,0,0,.65); }
   .hero-info { left: 48px; right: auto; bottom: auto; top: 50%; transform: translateY(-50%); max-width: 46%; flex-direction: column; align-items: flex-start; gap: 18px; z-index: 2; }
-  .hero-info .grow { text-align: left; }
+  .hero-info .grow { text-align: left; padding-left: 0; }
   .hero-info h2 { font-size: clamp(26px, 2.6vw, 38px); line-height: 1.12; }
   .hero-info p { font-size: 14px; margin-top: 10px; color: #d1d1d6; }
   .hero-play { width: auto; height: 46px; border-radius: 999px; padding: 0 24px 0 20px; font-size: 15px; font-weight: 700; gap: 10px; box-shadow: 0 8px 24px -8px rgba(var(--accent-rgb), .8); }

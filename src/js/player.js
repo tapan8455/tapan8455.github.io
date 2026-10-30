@@ -655,7 +655,6 @@
     }
     const other = P.mode === 'native' ? 'Smart Player' : 'Native Player';
 
-    const isLive = P.kind === 'live';
     const hasNextLive = isLive && P.list && P.list.length > 1;
     const nextEp = P.kind === 'episode' ? nextEpisode() : null;
 

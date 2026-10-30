@@ -60,12 +60,18 @@ export default {
       headers['X-Forwarded-For'] = clientIp;
       headers['X-Real-IP'] = clientIp;
     }
-    const res = await fetch(upstream.toString(), {
-      method: request.method === 'HEAD' ? 'HEAD' : 'GET',
-      headers,
-      redirect: 'follow',
-      cache: 'no-store'
-    });
+    let res;
+    try {
+      res = await fetch(upstream.toString(), {
+        method: request.method === 'HEAD' ? 'HEAD' : 'GET',
+        headers,
+        redirect: 'follow',
+        cache: 'no-store',
+        signal: AbortSignal.timeout(10000)
+      });
+    } catch (err) {
+      return new Response('Upstream connection failed or timed out: ' + err.message, { status: 504, headers: cors });
+    }
 
     const out = new Headers(cors);
     ['Content-Type', 'Content-Length', 'Content-Range', 'Accept-Ranges', 'Cache-Control'].forEach(h => { const v = res.headers.get(h); if (v) out.set(h, v); });

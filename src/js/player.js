@@ -582,6 +582,7 @@
     else if (reason === 'auth') { title = 'Access denied by provider'; desc = 'Your subscription may have expired or the maximum number of connections is in use.'; }
     else if (reason === 'offline') { title = 'Stream offline'; desc = 'This channel or video is not available on the provider right now.'; }
     else if (reason === 'codec' || isMkv) { title = 'Format not supported by the browser'; desc = 'Browsers cannot decode MKV files or some audio codecs (AC3/DTS). Open it in VLC to watch.'; }
+    else if (reason === 'media' && !isLive) { title = 'Format not supported by browser'; desc = 'This movie or episode may use an audio or video codec (such as Dolby AC3, DTS, or MKV) that web browsers cannot decode. Tap "Open in VLC" to watch.'; }
     else if (reason === 'timeout') { title = 'Stream timed out'; desc = 'The stream did not start within 15 seconds. Try again or switch player.'; }
     const other = P.mode === 'native' ? 'Smart Player' : 'Native Player';
 

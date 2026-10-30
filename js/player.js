@@ -95,7 +95,7 @@
       if (Net.blocked(url)) { this.lastError = { reason: 'mixed' }; return this.next(session); }
       const v = this.video;
       const failover = (why) => { if (session !== this.session) return; if (why) this.lastError = why; this.next(session); };
-      const timeoutLimit = this.live ? 10000 : 15000;
+      const timeoutLimit = this.live ? 10000 : 7000;
       this.watchdog = setTimeout(() => {
         if (session === this.session && (v.readyState < 2 || (v.currentTime === 0 && !this.started))) {
           if (this.url && !this._triedDirect && Net.media(this.url) !== this.url && !Net.blocked(this.url)) {
@@ -139,6 +139,21 @@
           failover({ reason: 'media', msg: e.message });
         }
       });
+      // Fast check: If loading via proxy, check if the proxy returned an HTTP error (like 401 or 522)
+      if (!direct && target !== url) {
+        fetch(target, { method: 'GET', headers: { Range: 'bytes=0-0' }, signal: AbortSignal.timeout(3500) })
+          .then(r => {
+            if (session === this.session && !this.started && (r.status === 401 || r.status === 403 || r.status >= 500)) {
+              if (!Net.blocked(url)) {
+                this._triedDirect = true;
+                this.playNative(url, session, failover, true);
+              } else {
+                failover({ reason: r.status === 401 || r.status === 403 ? 'auth' : 'network', code: r.status });
+              }
+            }
+          })
+          .catch(() => {});
+      }
     }
 
     playHls(url, session, failover) {

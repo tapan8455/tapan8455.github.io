@@ -34,9 +34,16 @@ export default {
 
     const self = new URL(request.url);
     const target = self.searchParams.get('url') || (self.pathname.length > 1 && self.pathname.startsWith('/http') ? decodeURIComponent(self.pathname.slice(1)) : null);
-    if (!target) return new Response('Missing ?url=', { status: 400, headers: cors });
+    if (!target || target === '%s' || target === 'undefined') {
+      return new Response(
+        'AURA IPTV CORS Proxy is active and running!\n\n' +
+        'To use this proxy in the AURA app, set the CORS proxy URL in Profile → Advanced setting to:\n' +
+        self.origin + '/?url=%s\n',
+        { status: 200, headers: Object.assign({}, cors, { 'Content-Type': 'text/plain; charset=utf-8' }) }
+      );
+    }
     let upstream;
-    try { upstream = new URL(target); } catch (_) { return new Response('Bad url', { status: 400, headers: cors }); }
+    try { upstream = new URL(target); } catch (_) { return new Response('Bad url: ' + target, { status: 400, headers: cors }); }
     if (!/^https?:$/.test(upstream.protocol)) return new Response('Only http(s) targets', { status: 400, headers: cors });
     if (/^(localhost|127\.|10\.|192\.168\.|169\.254\.|172\.(1[6-9]|2\d|3[01])\.)/.test(upstream.hostname)) return new Response('Private address blocked', { status: 403, headers: cors });
     if (env.ALLOWED_HOSTS) {

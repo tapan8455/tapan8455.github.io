@@ -2,11 +2,12 @@
  * AURA IPTV — service worker. Caches the app shell only.
  * Never caches streams, provider API calls, proxied URLs or credentials.
  */
-const CACHE_NAME = 'aura-shell-v3-2';
+const CACHE_NAME = 'aura-shell-v3-4';
 const APP_SHELL = [
   './',
   './index.html',
   './css/app.css',
+  './css/desktop.css',
   './js/core.js',
   './js/data.js',
   './js/ui.js',

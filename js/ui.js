@@ -165,7 +165,7 @@
   /* ---------------------------------------------------------------- shared renderers */
   UI.img = function (url, alt = '', cls = '') {
     if (!url) return '';
-    return `<img src="${esc(Net.image(url))}" alt="${esc(alt)}" class="${cls}" loading="lazy" decoding="async" referrerpolicy="no-referrer" onerror="App.UI.imgErr(this)">`;
+    return `<img src="${esc(Net.image(url))}" alt="${esc(alt)}" class="fade ${cls}" loading="lazy" decoding="async" referrerpolicy="no-referrer" onload="this.classList.add('in')" onerror="App.UI.imgErr(this)">`;
   };
   UI.imgErr = function (img) {
     const box = img.parentElement;
@@ -302,6 +302,11 @@
     if (on) { hl.style.opacity = 1; hl.style.width = `${on.offsetWidth}px`; hl.style.transform = `translateX(${on.offsetLeft - 6}px)`; }
     else hl.style.opacity = 0;
     $$('.fab-cats').forEach(f => f.classList.toggle('hidden', name !== 'home'));
+    document.body.classList.toggle('has-sidebar', !!App.Sources.active);
+    const sbKey = name === 'home' ? `home:${App.homeType}` : name;
+    $$('#sidebar [data-sb]').forEach(b => b.classList.toggle('on', b.dataset.sb === sbKey));
+    const src = App.Sources.active, sbSrc = $('#sidebar [data-sb-src]');
+    if (sbSrc && src) sbSrc.innerHTML = `<span class="grow" style="min-width:0"><b class="trunc">${esc(src.name || App.Sources.hostOf(src))}</b><small><span class="dot c-green"></span>${src.type === 'm3u' ? 'M3U playlist' : 'Xtream · Active'}</small></span>${ic('right-left')}`;
   };
   window.addEventListener('resize', App.debounce(() => current && UI.syncTabbar(current.name), 120));
 

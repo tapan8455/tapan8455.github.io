@@ -83,11 +83,13 @@
 
   // Average poster color for the Continue Playing card tint (needs a CORS-enabled image host).
   const tintCache = new Map();
-  UI.tint = function (el, url) {
-    const fallback = () => { const h = App.hashStr(url || '') % 360; el.style.setProperty('--tint', hsl(h)); };
+  // Sets `prop` on `el` to the poster's average colour ("r, g, b"), scaled by `k`.
+  UI.tint = function (el, url, prop = '--tint', k = 0.55) {
+    const key = `${url}|${k}`;
+    const fallback = () => { const h = App.hashStr(url || '') % 360; el.style.setProperty(prop, hsl(h)); };
     const hsl = (h) => { const c = (n) => { const k = (n + h / 30) % 12; return Math.round(255 * (0.32 - 0.22 * Math.max(-1, Math.min(k - 3, 9 - k, 1)))); }; return `${c(0)}, ${c(8)}, ${c(4)}`; };
     if (!url) return fallback();
-    if (tintCache.has(url)) return el.style.setProperty('--tint', tintCache.get(url));
+    if (tintCache.has(key)) return el.style.setProperty(prop, tintCache.get(key));
     const img = new Image();
     img.crossOrigin = 'anonymous';
     img.onload = () => {
@@ -96,9 +98,9 @@
         const x = c.getContext('2d'); x.drawImage(img, 0, 0, 8, 8);
         const d = x.getImageData(0, 0, 8, 8).data; let r = 0, g = 0, b = 0;
         for (let i = 0; i < d.length; i += 4) { r += d[i]; g += d[i + 1]; b += d[i + 2]; }
-        const n = d.length / 4, k = 0.55;
-        const v = `${Math.round(r / n * k)}, ${Math.round(g / n * k)}, ${Math.round(b / n * k)}`;
-        tintCache.set(url, v); el.style.setProperty('--tint', v);
+        const n = d.length / 4;
+        const v = `${Math.min(255, Math.round(r / n * k))}, ${Math.min(255, Math.round(g / n * k))}, ${Math.min(255, Math.round(b / n * k))}`;
+        tintCache.set(key, v); el.style.setProperty(prop, v);
       } catch (_) { fallback(); }
     };
     img.onerror = fallback;
@@ -111,7 +113,7 @@
       const list = Sources.list;
       const tot = list.reduce((a, s) => { const c = s.counts || {}; a.live += c.live || 0; a.movie += c.movie || 0; a.series += c.series || 0; return a; }, { live: 0, movie: 0, series: 0 });
       const active = Sources.active;
-      el.innerHTML = `<div class="screen no-tabbar">
+      el.innerHTML = `<div class="screen no-tabbar narrow">
         <div class="src-hdr">
           ${active && Catalog.ready ? `<button class="cbtn lg" data-go-home aria-label="Back to home">${ic('chevron-left')}</button>` : ''}
           <h1 class="trunc">${esc(brand())}</h1>
@@ -369,10 +371,12 @@
   Router.routes.home = function (el) {
     const type = App.homeType;
     const typeIcon = { live: 'tv', movie: 'film', series: 'layer-group' }[type];
-    el.innerHTML = `<header class="home-hdr"><div class="home-hdr-inner">
-        <div class="grow"><span class="wordmark">${esc(App.BRAND.first)} ${esc(App.BRAND.second)}<svg viewBox="0 0 100 14" fill="none" stroke="#fff" stroke-width="2.4" stroke-linecap="round"><path d="M4 4 Q50 16 92 5"/><path d="M84 2 L93 5 L87 11"/></svg></span></div>
-        <button class="cbtn lg" data-h="swap" aria-label="Switch playlist">${ic('right-left')}</button>
-        <button class="type-pill" data-h="type" aria-label="Content type: ${App.TYPE_LABEL[type]}" aria-haspopup="menu">${ic(typeIcon)}${ic('chevron-down')}</button>
+    el.innerHTML = `<div class="ambient" aria-hidden="true"></div><header class="home-hdr"><div class="home-hdr-inner">
+        <h1 class="home-title d-only grow">${App.TYPE_LABEL[type] === 'Live' ? 'Live TV' : App.TYPE_LABEL[type]}</h1>
+        <div class="grow m-only"><span class="wordmark">${esc(App.BRAND.first)} ${esc(App.BRAND.second)}<svg viewBox="0 0 100 14" fill="none" stroke="#fff" stroke-width="2.4" stroke-linecap="round"><path d="M4 4 Q50 16 92 5"/><path d="M84 2 L93 5 L87 11"/></svg></span></div>
+        <button class="pill-btn d-only" data-h="cats">${ic('table-cells-large')} Categories</button>
+        <button class="cbtn lg m-only" data-h="swap" aria-label="Switch playlist">${ic('right-left')}</button>
+        <button class="type-pill m-only" data-h="type" aria-label="Content type: ${App.TYPE_LABEL[type]}" aria-haspopup="menu">${ic(typeIcon)}${ic('chevron-down')}</button>
       </div></header>
       <div data-home></div>`;
     const host = $('[data-home]', el);
@@ -390,6 +394,7 @@
       const a = b.dataset.h;
       if (a === 'swap') Router.go('sources');
       else if (a === 'import') V.importFlow(Sources.active);
+      else if (a === 'cats') V.categoriesSheet(type);
       else if (a === 'type') {
         UI.menu(b, [
           { label: 'Live', icon: 'tower-broadcast', tile: 'c-blue', on: type === 'live', onClick: () => setType('live') },
@@ -433,18 +438,18 @@
       const picks = Catalog.heroPicks(type);
       if (picks.length) parts.push(`<div class="hero" role="list" aria-label="Featured">${picks.map(it => {
         const meta = [App.TYPE_ONE[type], type === 'movie' && it.ext ? it.ext.toUpperCase() : '', it.rating ? `★ ${Number(it.rating).toFixed(1)}` : ''].filter(Boolean).join(' • ');
-        return `<div class="hero-card" role="listitem" data-act="open" data-type="${type}" data-id="${esc(it.id)}" data-ph="poster" data-name="${esc(it.name)}">${UI.img(it.icon, it.name)}
+        return `<div class="hero-card" role="listitem" data-act="open" data-type="${type}" data-id="${esc(it.id)}" data-ph="poster" data-name="${esc(it.name)}">${UI.img(it.icon, it.name)}${UI.img(it.icon, '', 'hero-fg')}
           <div class="hero-info"><div class="grow"><h2 class="clamp2">${esc(it.name)}</h2><p>• ${esc(meta)}</p></div>
-          <button class="hero-play" data-act="play" data-type="${type}" data-id="${esc(it.id)}" aria-label="Play ${esc(it.name)}">${ic('play')}</button></div></div>`;
+          <button class="hero-play" data-act="play" data-type="${type}" data-id="${esc(it.id)}" aria-label="Play ${esc(it.name)}">${ic('play')}<span class="d-only">Play</span></button></div></div>`;
       }).join('')}</div>`);
     }
     if (Settings.get('freshArrivals')) {
       const fresh = Catalog.freshArrivals(type, 20);
-      if (fresh.length) parts.push(`<section class="section"><div class="section-hdr"><h2 class="section-title">Fresh Arrivals</h2></div>
+      if (fresh.length) parts.push(`<section class="section"><div class="section-hdr"><h2 class="section-title">Fresh Arrivals</h2><span class="rail-arrows d-only"><button data-rail="-1" aria-label="Scroll left">${ic('chevron-left')}</button><button data-rail="1" aria-label="Scroll right">${ic('chevron-right')}</button></span></div>
         <div class="rank-rail scroll-x">${fresh.map((it, i) => `<div class="rank-item" data-act="open" data-type="${type}" data-id="${esc(it.id)}"><span class="rank-num">${i + 1}</span>${UI.poster(it, { act: 'none' })}</div>`).join('')}</div></section>`);
     }
     const cont = Settings.get('continuePlaying') ? continueItems(type) : [];
-    if (cont.length) parts.push(`<section class="section" data-cont><div class="section-hdr">${ic('circle-play')}<h2 class="section-title">Continue Playing</h2></div>
+    if (cont.length) parts.push(`<section class="section" data-cont><div class="section-hdr">${ic('circle-play')}<h2 class="section-title">Continue Playing</h2><span class="rail-arrows d-only"><button data-rail="-1" aria-label="Scroll left">${ic('chevron-left')}</button><button data-rail="1" aria-label="Scroll right">${ic('chevron-right')}</button></span></div>
       <div class="rail scroll-x">${cont.map(c => `<div class="cont-card" data-cont-id="${esc(c.id)}" data-tint="${esc(c.icon || '')}" role="button" tabindex="0" aria-label="Continue ${esc(c.name)}">
         <div class="poster" data-ph="poster" data-name="${esc(c.name)}">${c.icon ? UI.img(c.icon, '') : `<div class="ph">${ic('film')}</div>`}<span class="play-ov">${ic('play')}</span></div>
         <div class="info"><span class="type-chip">${ic(type === 'series' ? 'layer-group' : 'film')} ${App.TYPE_LABEL[type]}</span><h3 class="clamp2">${esc(c.name)}</h3>
@@ -453,6 +458,21 @@
     parts.push('<div data-rails></div>');
     host.innerHTML = parts.join('');
     $$('[data-tint]', host).forEach(card => UI.tint(card, card.dataset.tint));
+    // Ambient glow behind the header follows the poster currently shown in the hero.
+    const heroEl = $('.hero', host);
+    if (heroEl) {
+      const glow = () => {
+        const cards = $$('.hero-card', heroEl);
+        if (!cards.length) return;
+        const step = cards[1] ? cards[1].offsetLeft - cards[0].offsetLeft : 0;
+        const card = step > 0 ? cards[Math.min(cards.length - 1, Math.max(0, Math.round(heroEl.scrollLeft / step)))] : cards[0];
+        if (!card) return;
+        const it = Catalog.item(type, card.dataset.id);
+        if (it && it.icon) UI.tint(host.parentElement, it.icon, '--amb', 1.15);
+      };
+      glow();
+      heroEl.addEventListener('scroll', App.debounce(glow, 160), { passive: true });
+    }
     host.addEventListener('click', (e) => {
       const menuBtn = e.target.closest('[data-cont-menu]');
       const card = e.target.closest('[data-cont-id]');
@@ -468,7 +488,7 @@
     if (!cats.length) { railsHost.innerHTML = `<div class="screen" style="padding-top:20px">${UI.empty({ icon: ic('eye-slash'), title: 'No categories to show', msg: 'All categories are hidden or locked. Use Manage Categories to show them.' })}</div>`; return; }
     UI.chunked(railsHost, cats, (c) => {
       const items = Catalog.items(type, c.id).slice(0, 30);
-      return `<section class="section"><div class="section-hdr" data-act="cat" data-type="${type}" data-id="${esc(c.id)}" role="button" tabindex="0"><h2 class="section-title trunc">${esc(c.name)}</h2>${ic('chevron-right')}</div>
+      return `<section class="section"><div class="section-hdr" data-act="cat" data-type="${type}" data-id="${esc(c.id)}" role="button" tabindex="0"><h2 class="section-title trunc">${esc(c.name)}</h2><span class="rail-arrows d-only"><button data-rail="-1" aria-label="Scroll left">${ic('chevron-left')}</button><button data-rail="1" aria-label="Scroll right">${ic('chevron-right')}</button></span>${ic('chevron-right')}</div>
         <div class="rail scroll-x">${items.map(it => UI.poster(it)).join('')}</div></section>`;
     }, { chunk: 4 });
   }
@@ -791,7 +811,7 @@
 
   /* ================================================================ Search */
   Router.routes.search = function (el) {
-    el.innerHTML = `<div class="screen">
+    el.innerHTML = `<div class="screen narrow">
       <h1 class="large-title">Search</h1>
       <div class="field dark" style="margin-top:18px">${ic('magnifying-glass')}<input type="search" data-q placeholder="Search movies, series, channels…" aria-label="Search" enterkeyhint="search"><button class="muted hidden" data-clear aria-label="Clear">${ic('circle-xmark')}</button></div>
       <div data-res></div></div>`;

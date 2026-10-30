@@ -19,15 +19,16 @@
     let catId = EPG.catId && (EPG.catId === 'all' || cats.some(c => c.id === EPG.catId)) ? EPG.catId : (cats.find(c => c.id === User.d.liveCat) || cats[0] || {}).id;
     if (!catId) catId = 'all';
     el.innerHTML = `<div class="screen" style="padding-bottom:0">
-      <div class="mini-player" data-mini>
+      <div class="epg-top"><div class="mini-player" data-mini>
         <video playsinline muted></video>
         <div class="state" data-state></div>
         <div class="ch-label trunc" data-chlabel></div>
         <button class="cbtn lg glass vol" data-mute aria-label="Toggle sound">${ic('volume-xmark')}</button>
         <button class="cbtn xl glass pp" data-pp aria-label="Play or pause">${ic('play')}</button>
       </div>
-      <div class="epg-hdr"><div><div class="eyebrow">EPG</div><h1 class="title2" style="font-size:30px">Program Guide</h1></div>
+      <div class="epg-hdr"><div><div class="eyebrow">EPG</div><h1 class="title2 epg-title">Program Guide</h1></div>
         <div class="clock-pill" aria-live="off"><span class="dot"></span><b data-clock></b><span data-date></span></div></div>
+      </div>
       <div class="chips scroll-x" data-chips><button class="chip${catId === 'all' ? ' on' : ''}" data-chip="all">All</button>${cats.map(c => `<button class="chip${c.id === catId ? ' on' : ''}" data-chip="${esc(c.id)}">${esc(c.name)}</button>`).join('')}</div>
       <div class="guide" data-guide style="--ppm:${PPM}px"><div class="g-inner" data-inner></div></div>
     </div>`;
@@ -240,7 +241,7 @@
             <button class="cbtn" data-dlrm="${d.kind}:${esc(d.id)}" aria-label="Remove">${ic('trash-can')}</button></div>`).join('')}`
           : UI.empty({ icon: ic('arrow-down'), title: 'No downloads yet', msg: 'Downloaded movies, series or live channels will appear here.' });
       }
-      el.innerHTML = `<div class="bg-navy"><div class="screen">
+      el.innerHTML = `<div class="bg-navy"><div class="screen narrow">
         <h1 class="large-title">${tab === 'watchlist' ? 'Watchlist' : 'Downloads'}</h1>
         <p class="large-sub">${tab === 'watchlist' ? 'Your saved movies, series and live channels.' : 'Movies, series and live channels saved offline.'}</p>
         <div class="seg-big" role="tablist">
@@ -282,7 +283,7 @@
       const fmt = Settings.get('channelFormat') === 'ts' ? 'MPEG-TS (.ts)' : 'HLS (.m3u8)';
       const exp = ui.exp_date ? new Date(Number(ui.exp_date) * 1000).toLocaleDateString('en-US', { month: 'short', day: 'numeric', year: 'numeric' }) : 'Unlimited';
       const url = s.type === 'xtream' ? s.server : (s.m3uUrl || s.fileName || 'Local file');
-      el.innerHTML = `<div class="screen">
+      el.innerHTML = `<div class="screen narrow">
         <div class="acct-card">
           <div class="acct-top"><div class="avatar">${ic('circle-user')}</div>
             <div class="grow"><div class="acct-name"><h2 class="trunc">${esc(s.name || Sources.hostOf(s))}</h2><span class="status-pill${active ? '' : ' bad'}">${esc(s.type === 'm3u' ? 'M3U' : ui.status || 'Active')}</span></div>

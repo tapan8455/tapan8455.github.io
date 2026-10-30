@@ -30,6 +30,35 @@
     fab.innerHTML = UI.gridIcon;
     fab.onclick = () => App.Views.categoriesSheet(App.homeType);
     document.body.appendChild(fab);
+    const sb = document.createElement('aside');
+    sb.id = 'sidebar';
+    sb.setAttribute('aria-label', 'Main');
+    const item = (key, icon, label, reg) => `<button class="sb-item" data-sb="${key}">${reg ? icr(icon) : ic(icon)}<span>${label}</span></button>`;
+    sb.innerHTML = `<div class="sb-drag"></div>
+      <div class="sb-brand">${App.esc(App.BRAND.first)} <span class="accent">${App.esc(App.BRAND.second)}</span></div>
+      ${item('home:movie', 'film', 'Movies')}${item('home:series', 'layer-group', 'Series')}${item('home:live', 'tower-broadcast', 'Live TV')}
+      ${item('epg', 'tv', 'TV Guide')}${item('search', 'magnifying-glass', 'Search')}
+      <div class="sb-label">Library</div>
+      ${item('saved', 'heart', 'Watchlist', true)}${item('cats', 'table-cells-large', 'Categories')}
+      <div class="sb-spacer"></div>
+      ${item('profile', 'circle-user', 'Profile', true)}${item('settings', 'gear', 'Settings')}
+      <button class="sb-src" data-sb-src aria-label="Switch playlist"></button>`;
+    sb.addEventListener('click', (e) => {
+      const b = e.target.closest('[data-sb], [data-sb-src]');
+      if (!b) return;
+      const k = b.dataset.sb;
+      if (b.hasAttribute('data-sb-src')) return Router.go('sources');
+      if (k.startsWith('home:')) {
+        const t = k.slice(5);
+        if (App.homeType !== t) { App.homeType = t; Router.markDirty('home'); }
+        if (!Router.current || Router.current.name !== 'home') Router.go('home'); else UI.syncTabbar('home');
+        window.scrollTo({ top: 0 });
+      } else if (k === 'cats') App.Views.categoriesSheet(App.homeType);
+      else if (k === 'settings') App.Views.openAdvanced();
+      else Router.go(k);
+    });
+    document.body.appendChild(sb);
+    if (Net.isElectron && /darwin/.test(window.auraNative.platform || '')) document.documentElement.classList.add('electron-mac');
     const toast = document.createElement('div');
     toast.id = 'toast-root';
     toast.setAttribute('aria-live', 'polite');
@@ -38,6 +67,13 @@
 
   // One delegated handler for posters, channel tiles, hearts and category headers everywhere.
   function onAction(e) {
+    const rail = e.target.closest('[data-rail]');
+    if (rail) {
+      e.stopPropagation();
+      const sc = rail.closest('.section').querySelector('.scroll-x');
+      if (sc) sc.scrollBy({ left: Number(rail.dataset.rail) * sc.clientWidth * 0.85, behavior: 'smooth' });
+      return;
+    }
     let t = e.target.closest('[data-act]');
     while (t && t.dataset.act === 'none') t = t.parentElement && t.parentElement.closest('[data-act]');
     if (!t || t.closest('#player')) return;

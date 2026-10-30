@@ -2,7 +2,7 @@
    Dark-only, glassy, rounded. Accent color is driven by the active theme (data-theme on <html>). */
 
 :root {
-  --bg: #000;
+  --bg: #050608;
   --bg-elev: #0b0d12;
   --s1: #141518;
   --s2: #1c1d21;
@@ -795,3 +795,8 @@ a { color: inherit; }
 @media (prefers-reduced-motion: reduce) {
   *, *::before, *::after { animation-duration: .01ms !important; transition-duration: .01ms !important; }
 }
+.epg-title { font-size: 30px; }
+[data-view="home"] { position: relative; z-index: 0; }
+.ambient { position: absolute; top: 0; left: 0; right: 0; height: 820px; z-index: -1; pointer-events: none; transition: opacity .6s;
+  background: radial-gradient(80% 70% at 50% -10%, rgba(var(--amb, var(--accent-rgb)), .42) 0%, rgba(var(--amb, var(--accent-rgb)), .12) 45%, transparent 75%); }
+.home-hdr.scrolled { background: rgba(5, 6, 8, .72); }

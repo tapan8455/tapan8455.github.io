@@ -52,6 +52,7 @@
       this.candidates = list;
       this.mode = mode; this.live = live; this.startAt = startAt; this.attempt = 0; this.reconnects = 0; this.lastError = null; this.started = false;
       this._fallbackTried = false;
+      this._triedDirect = false;
       this.attachEvents(session);
       this.status('loading');
       if (!candidates.length) return this.fail({ reason: 'nourl' });
@@ -89,13 +90,21 @@
       }
       const url = this.candidates[this.attempt++];
       this.url = url;
+      this._triedDirect = false;
       this.status('loading', { attempt: this.attempt, total: this.candidates.length });
       if (Net.blocked(url)) { this.lastError = { reason: 'mixed' }; return this.next(session); }
       const v = this.video;
       const failover = (why) => { if (session !== this.session) return; if (why) this.lastError = why; this.next(session); };
       const timeoutLimit = this.live ? 10000 : 15000;
       this.watchdog = setTimeout(() => {
-        if (session === this.session && (v.readyState < 2 || (v.currentTime === 0 && !this.started))) { this.lastError = this.lastError || { reason: 'timeout' }; failover(); }
+        if (session === this.session && (v.readyState < 2 || (v.currentTime === 0 && !this.started))) {
+          if (this.url && !this._triedDirect && Net.media(this.url) !== this.url && !Net.blocked(this.url)) {
+            this._triedDirect = true;
+            return this.playNative(this.url, session, failover, true);
+          }
+          this.lastError = this.lastError || { reason: 'timeout' };
+          failover();
+        }
       }, timeoutLimit);
       const isHls = /\.m3u8(\?|$)/i.test(url);
       const isTs = /\.ts(\?|$)/i.test(url) || (!/\.(mp4|mkv|webm|mov|avi|m4v)(\?|$)/i.test(url) && this.live);
@@ -111,9 +120,10 @@
       }
     }
 
-    playNative(url, session, failover) {
+    playNative(url, session, failover, direct = false) {
       const v = this.video;
-      v.src = Net.media(url);
+      const target = direct ? url : Net.media(url);
+      v.src = target;
       if (this.startAt > 0) { const t = this.startAt; v.addEventListener('loadedmetadata', () => { if (session === this.session && v.duration > t) v.currentTime = t; }, { once: true }); }
       v.play().catch(e => {
         if (session !== this.session) return;
@@ -122,6 +132,10 @@
           v.muted = true;
           v.play().then(() => hud('Muted for autoplay · Tap screen to unmute')).catch(() => this.status('paused'));
         } else if (e.name !== 'AbortError') {
+          if (!direct && target !== url && !Net.blocked(url)) {
+            this._triedDirect = true;
+            return this.playNative(url, session, failover, true);
+          }
           failover({ reason: 'media', msg: e.message });
         }
       });
@@ -248,6 +262,12 @@
           if (session !== this.session) return;
           const code = v.error ? v.error.code : 0;
           this.lastError = { reason: code === 4 ? 'codec' : code === 3 ? 'decode' : 'media', mediaCode: code };
+          if (this.url && !this._triedDirect && Net.media(this.url) !== this.url && !Net.blocked(this.url)) {
+            this._triedDirect = true;
+            const failover = (why) => { if (session !== this.session) return; if (why) this.lastError = why; this.next(session); };
+            return this.playNative(this.url, session, failover, true);
+          }
+          this._triedDirect = false;
           this.next(session);
         },
         ended: () => { if (session !== this.session) return; if (this.live && this.reconnects < 5) this.reconnect(session); else this.status('ended'); }

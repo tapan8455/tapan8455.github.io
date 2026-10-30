@@ -51,9 +51,15 @@ export default {
       if (!hosts.some(h => upstream.hostname === h || upstream.hostname.endsWith(`.${h}`))) return new Response('Host not allowed', { status: 403, headers: cors });
     }
 
-    const headers = { 'User-Agent': 'IPTVSmartersPro', 'Accept': '*/*' };
+    const ua = request.headers.get('User-Agent') || 'IPTVSmartersPro';
+    const headers = { 'User-Agent': ua, 'Accept': '*/*' };
     const range = request.headers.get('Range');
     if (range) headers.Range = range;
+    const clientIp = request.headers.get('CF-Connecting-IP') || request.headers.get('X-Forwarded-For');
+    if (clientIp) {
+      headers['X-Forwarded-For'] = clientIp;
+      headers['X-Real-IP'] = clientIp;
+    }
     const res = await fetch(upstream.toString(), {
       method: request.method === 'HEAD' ? 'HEAD' : 'GET',
       headers,
@@ -68,7 +74,7 @@ export default {
     // Force proper MIME type for video streaming (providers often return generic application/octet-stream).
     const targetPath = (upstream.pathname || '').toLowerCase();
     const rawCt = (res.headers.get('Content-Type') || '').toLowerCase();
-    if (/\.(mp4|m4v)(\?|$)/i.test(targetPath) || ((rawCt === 'application/octet-stream' || !rawCt) && !/\.(m3u8|json)(\?|$)/i.test(targetPath))) {
+    if (/\.(mp4|m4v|mkv|mov|webm|avi)(\?|$)/i.test(targetPath) || rawCt.includes('matroska') || ((rawCt === 'application/octet-stream' || !rawCt) && !/\.(m3u8|json)(\?|$)/i.test(targetPath))) {
       out.set('Content-Type', 'video/mp4');
     } else if (/\.ts(\?|$)/i.test(targetPath)) {
       out.set('Content-Type', 'video/mp2t');

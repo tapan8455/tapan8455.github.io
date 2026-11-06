@@ -64,7 +64,7 @@ img.fade.in { opacity: 1; }
   /* page frame & type scale */
   .screen { padding: 28px var(--pad) 56px; max-width: none; }
   .screen.no-tabbar { padding-bottom: 56px; }
-  .screen.narrow { max-width: 980px; margin: 0; }
+  .screen.narrow { max-width: 980px; margin: 0 auto; }
   .large-title { font-size: 30px; margin-top: 4px; }
   .large-sub { font-size: 15px; margin-bottom: 20px; }
   .title1 { font-size: 26px; }

@@ -1,0 +1,17 @@
+#EXTM3U
+# AURA IPTV demo playlist: freely licensed sample streams, for testing the player.
+# Big Buck Bunny (c) Blender Foundation, CC BY 3.0 · Sintel (c) Blender Foundation, CC BY 3.0
+# Elephants Dream (c) Blender Foundation / Netherlands Media Art Institute, CC BY 2.5
+# Test streams courtesy of Mux and Apple.
+#EXTINF:-1 tvg-id="demo.bbb" tvg-logo="https://archive.org/services/img/BigBuckBunny_124" group-title="Demo Channels",Big Buck Bunny (HLS)
+https://test-streams.mux.dev/x36xhzz/x36xhzz.m3u8
+#EXTINF:-1 tvg-id="demo.apple" group-title="Demo Channels",Apple HLS Sample
+https://devstreaming-cdn.apple.com/videos/streaming/examples/bipbop_16x9/bipbop_16x9_variant.m3u8
+#EXTINF:-1 tvg-id="demo.mux" group-title="Demo Channels",Mux Test Stream
+https://test-streams.mux.dev/test_001/stream.m3u8
+#EXTINF:-1 tvg-logo="https://archive.org/services/img/BigBuckBunny_124" group-title="Open Movies",Big Buck Bunny (2008)
+https://archive.org/download/BigBuckBunny_124/Content/big_buck_bunny_720p_surround.mp4
+#EXTINF:-1 tvg-logo="https://archive.org/services/img/Sintel" group-title="Open Movies",Sintel (2010)
+https://archive.org/download/Sintel/sintel-2048-stereo_512kb.mp4
+#EXTINF:-1 tvg-logo="https://archive.org/services/img/ElephantsDream" group-title="Open Movies",Elephants Dream (2006)
+https://archive.org/download/ElephantsDream/ed_1024_512kb.mp4

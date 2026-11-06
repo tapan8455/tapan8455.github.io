@@ -43,13 +43,9 @@
     load(candidates, { mode = 'smart', live = false, startAt = 0 } = {}) {
       this.teardown();
       const session = ++this.session;
-      let list = candidates.slice();
-      if (!Net.isElectron && !live) {
-        const mp4s = list.filter(u => /\.mp4(\?|$)/i.test(u));
-        const others = list.filter(u => !/\.mp4(\?|$)/i.test(u));
-        list = mp4s.length ? [...mp4s, ...others] : list;
-      }
-      this.candidates = list;
+      // Keep the provider's own container extension first (it is the real file); the
+      // .mp4 variant from streamCandidates() stays as a fallback.
+      this.candidates = candidates.slice();
       this.mode = mode; this.live = live; this.startAt = startAt; this.attempt = 0; this.reconnects = 0; this.lastError = null; this.started = false;
       this._fallbackTried = false;
       this._triedDirect = false;
@@ -65,47 +61,52 @@
       this.hooks.onError && this.hooks.onError(Object.assign({ url: this.candidates && this.candidates[0], lastError: this.lastError, mediaCode: this.video.error && this.video.error.code }, info));
     }
 
+    // A direct (un-proxied) request is only worth trying when it differs from the proxied
+    // one and the browser will not refuse it as mixed content.
+    canDirect(url) {
+      if (!url || Net.media(url) === url) return false;
+      return !(Net.isHttpsPage && /^http:\/\//i.test(url));
+    }
+
     next(session) {
       if (session !== this.session) return;
       this.teardown();
       if (this.attempt >= this.candidates.length) {
-        if (!this._fallbackTried && this.candidates.length > 0) {
+        // One last try of the first URL with the other engine — only useful for HLS/TS, where
+        // smart (hls.js/mpegts.js) and native playback really differ.
+        const first = this.candidates[0];
+        if (!this._fallbackTried && first && (this.live || /\.(m3u8|ts)(\?|$)/i.test(first))) {
           this._fallbackTried = true;
-          this.attempt = 0;
           this.mode = this.mode === 'smart' ? 'native' : 'smart';
-          const url = this.candidates[this.attempt++];
-          this.url = url;
-          const failover = (why) => { if (session !== this.session) return; if (why) this.lastError = why; this.next(session); };
-          try {
-            if (this.mode === 'smart') {
-              const isHls = /\.m3u8(\?|$)/i.test(url);
-              const isTs = /\.ts(\?|$)/i.test(url) || (!/\.(mp4|mkv|webm|mov|avi|m4v)(\?|$)/i.test(url) && this.live);
-              if (isHls && window.Hls && Hls.isSupported()) return this.playHls(url, session, failover);
-              if (isTs && !isHls && window.mpegts && mpegts.getFeatureList().mseLivePlayback) return this.playTs(url, session, failover);
-            }
-            return this.playNative(url, session, failover);
-          } catch (_) {}
+          this.candidates = [first];
+          this.attempt = 0;
+          return this.next(session);
         }
         return this.fail({ reason: this.lastError && this.lastError.reason });
       }
       const url = this.candidates[this.attempt++];
       this.url = url;
       this._triedDirect = false;
+      this.started = false;
       this.status('loading', { attempt: this.attempt, total: this.candidates.length });
-      this.lastError = null;
       const v = this.video;
       const failover = (why) => { if (session !== this.session) return; if (why) this.lastError = why; this.next(session); };
-      const timeoutLimit = this.live ? 10000 : 7000;
-      this.watchdog = setTimeout(() => {
-        if (session === this.session && (v.readyState < 2 || (v.currentTime === 0 && !this.started))) {
-          if (this.url && !this._triedDirect && Net.media(this.url) !== this.url && !Net.blocked(this.url)) {
-            this._triedDirect = true;
-            return this.playNative(this.url, session, failover, true);
-          }
-          this.lastError = this.lastError || { reason: 'timeout' };
-          failover();
+      // VOD servers often redirect to a tokenised URL and MP4s may need a second range request
+      // for the index (moov) before metadata is ready, so give them much longer than live.
+      const timeoutLimit = this.live ? 12000 : 30000;
+      const stuck = () => !this.started && (this.live ? v.readyState < 2 : v.readyState < 1);
+      const onTimeout = () => {
+        if (session !== this.session || !stuck()) return;
+        if (!this.inst && !this._triedDirect && this.canDirect(this.url)) {
+          this._triedDirect = true;
+          this.playNative(this.url, session, failover, true);
+          this.watchdog = setTimeout(onTimeout, timeoutLimit);
+          return;
         }
-      }, timeoutLimit);
+        this.lastError = this.lastError || { reason: 'timeout' };
+        failover();
+      };
+      this.watchdog = setTimeout(onTimeout, timeoutLimit);
       const isHls = /\.m3u8(\?|$)/i.test(url);
       const isTs = /\.ts(\?|$)/i.test(url) || (!/\.(mp4|mkv|webm|mov|avi|m4v)(\?|$)/i.test(url) && this.live);
       const nativeHls = !!v.canPlayType('application/vnd.apple.mpegurl');
@@ -125,35 +126,16 @@
       const target = direct ? url : Net.media(url);
       v.src = target;
       if (this.startAt > 0) { const t = this.startAt; v.addEventListener('loadedmetadata', () => { if (session === this.session && v.duration > t) v.currentTime = t; }, { once: true }); }
+      // Load failures are reported through the <video> 'error' event (see attachEvents), which
+      // drives failover. Handling them here as well would advance two candidates at once.
+      // No side "probe" request either: most IPTV accounts allow a single connection, and a
+      // second request for the same movie gets the first one (or itself) rejected.
       v.play().catch(e => {
-        if (session !== this.session) return;
-        if (e.name === 'NotAllowedError') {
-          // iOS Safari blocks unmuted autoplay. Mute and retry so stream starts playing immediately.
-          v.muted = true;
-          v.play().then(() => hud('Muted for autoplay · Tap screen to unmute')).catch(() => this.status('paused'));
-        } else if (e.name !== 'AbortError') {
-          if (!direct && target !== url && !Net.blocked(url)) {
-            this._triedDirect = true;
-            return this.playNative(url, session, failover, true);
-          }
-          failover({ reason: 'media', msg: e.message });
-        }
+        if (session !== this.session || !e || e.name !== 'NotAllowedError') return;
+        // Autoplay with sound was blocked. Mute and retry so the stream starts immediately.
+        v.muted = true;
+        v.play().then(() => hud('Muted for autoplay · Tap screen to unmute')).catch(() => this.status('paused'));
       });
-      // Fast check: If loading via proxy, check if the proxy returned an HTTP error (like 401 or 522)
-      if (!direct && target !== url) {
-        fetch(target, { method: 'GET', headers: { Range: 'bytes=0-0' }, signal: AbortSignal.timeout(3500) })
-          .then(r => {
-            if (session === this.session && !this.started && (r.status === 401 || r.status === 403 || r.status >= 500)) {
-              if (!Net.blocked(url)) {
-                this._triedDirect = true;
-                this.playNative(url, session, failover, true);
-              } else {
-                failover({ reason: r.status === 401 || r.status === 403 ? 'auth' : 'network', code: r.status });
-              }
-            }
-          })
-          .catch(() => {});
-      }
     }
 
     playHls(url, session, failover) {
@@ -264,7 +246,9 @@
                 if (this.inst && this.inst.startLoad) {
                   try { this.inst.startLoad(); return; } catch (_) {}
                 }
+                // Reload the same URL at the current position (next() would skip to another candidate).
                 this.startAt = cur;
+                this.attempt = Math.max(0, this.attempt - 1);
                 this.next(session);
               }
             }, 9000);
@@ -273,11 +257,13 @@
         playing: () => { if (session !== this.session) return; this.started = true; clearTimeout(this.watchdog); clearTimeout(this.stallTimer); this.reconnects = 0; this.status('playing'); },
         pause: () => { if (session === this.session && v.readyState >= 2) this.status('paused'); },
         canplay: () => { if (session === this.session) clearTimeout(this.watchdog); },
+        // For movies/episodes, metadata arriving proves the URL works; buffering is handled by 'waiting'.
+        loadedmetadata: () => { if (session === this.session && !this.live) clearTimeout(this.watchdog); },
         error: () => {
-          if (session !== this.session) return;
-          const code = v.error ? v.error.code : 0;
+          if (session !== this.session || !v.error) return;
+          const code = v.error.code;
           this.lastError = { reason: code === 4 ? 'codec' : code === 3 ? 'decode' : 'media', mediaCode: code };
-          if (this.url && !this._triedDirect && Net.media(this.url) !== this.url && !Net.blocked(this.url)) {
+          if (!this.inst && !this._triedDirect && this.canDirect(this.url)) {
             this._triedDirect = true;
             const failover = (why) => { if (session !== this.session) return; if (why) this.lastError = why; this.next(session); };
             return this.playNative(this.url, session, failover, true);

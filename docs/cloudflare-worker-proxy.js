@@ -60,17 +60,23 @@ export default {
       headers['X-Forwarded-For'] = clientIp;
       headers['X-Real-IP'] = clientIp;
     }
+    // Time out only while waiting for the upstream response headers. An abort signal that stays
+    // armed would also cut the body, killing movies/episodes ~seconds into playback.
     let res;
+    const ctl = new AbortController();
+    const timer = setTimeout(() => ctl.abort(), 20000);
     try {
       res = await fetch(upstream.toString(), {
         method: request.method === 'HEAD' ? 'HEAD' : 'GET',
         headers,
         redirect: 'follow',
         cache: 'no-store',
-        signal: AbortSignal.timeout(10000)
+        signal: ctl.signal
       });
     } catch (err) {
       return new Response('Upstream connection failed or timed out: ' + err.message, { status: 504, headers: cors });
+    } finally {
+      clearTimeout(timer);
     }
 
     const out = new Headers(cors);

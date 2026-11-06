@@ -51,28 +51,50 @@ export default {
       if (!hosts.some(h => upstream.hostname === h || upstream.hostname.endsWith(`.${h}`))) return new Response('Host not allowed', { status: 403, headers: cors });
     }
 
-    const ua = request.headers.get('User-Agent') || 'IPTVSmartersPro';
-    const headers = { 'User-Agent': ua, 'Accept': '*/*' };
+    // Same headers as server.js (the proxy movies/series were known to work through): an
+    // IPTV-player user agent, no browser UA and no forwarded client IP (providers that tie a
+    // VOD redirect token to the forwarded IP then reject the worker's real IP).
+    const headers = { 'User-Agent': 'IPTVSmartersPro/1.0.0 (Macintosh; Intel Mac OS X 10_15_7)', 'Accept': '*/*', 'Referer': `${upstream.origin}/` };
     const range = request.headers.get('Range');
     if (range) headers.Range = range;
-    const clientIp = request.headers.get('CF-Connecting-IP') || request.headers.get('X-Forwarded-For');
-    if (clientIp) {
-      headers['X-Forwarded-For'] = clientIp;
-      headers['X-Real-IP'] = clientIp;
-    }
+
+    // Cloudflare Workers can only open connections on these ports. Xtream panels often redirect
+    // movies/episodes to another server on a different port (e.g. :25461), which a worker cannot
+    // reach even though live TV on the main port works. Follow redirects by hand so that case
+    // gets a clear error instead of a silent failure.
+    const OK_PORTS = { 'http:': ['', '80', '8080', '8880', '2052', '2082', '2086', '2095'], 'https:': ['', '443', '2053', '2083', '2087', '2096', '8443'] };
+    const isPrivate = (h) => /^(localhost|127\.|10\.|192\.168\.|169\.254\.|172\.(1[6-9]|2\d|3[01])\.)/.test(h);
+    let res;
+    let url = upstream;
+    const ctl = new AbortController();
     // Time out only while waiting for the upstream response headers. An abort signal that stays
     // armed would also cut the body, killing movies/episodes ~seconds into playback.
-    let res;
-    const ctl = new AbortController();
     const timer = setTimeout(() => ctl.abort(), 20000);
     try {
-      res = await fetch(upstream.toString(), {
-        method: request.method === 'HEAD' ? 'HEAD' : 'GET',
-        headers,
-        redirect: 'follow',
-        cache: 'no-store',
-        signal: ctl.signal
-      });
+      for (let hop = 0; ; hop++) {
+        if (hop > 6) return new Response('Too many redirects from provider', { status: 502, headers: cors });
+        if (isPrivate(url.hostname)) return new Response('Private address blocked', { status: 403, headers: cors });
+        // Workers refuse bare-IP URLs (Cloudflare error 1003, "Direct IP access not allowed"),
+        // which IPTV panels use a lot, especially for movie/series servers. sslip.io is public
+        // DNS that maps "1.2.3.4.sslip.io" to 1.2.3.4, so the same server is reached by name.
+        if (/^\d{1,3}(\.\d{1,3}){3}$/.test(url.hostname)) { url = new URL(url.toString()); url.hostname = `${url.hostname}.sslip.io`; }
+        else if (url.hostname.startsWith('[')) {
+          return new Response(`Cloudflare Workers cannot fetch the bare IPv6 address ${url.hostname}. This provider's stream needs the Node proxy (server.js).`, { status: 502, headers: Object.assign({}, cors, { 'Content-Type': 'text/plain; charset=utf-8', 'X-Aura-Error': 'ip-host' }) });
+        }
+        if (!(OK_PORTS[url.protocol] || []).includes(url.port)) {
+          return new Response(`Cloudflare Workers cannot connect to port ${url.port} (${url.hostname}). This provider's stream needs the Node proxy (server.js) instead of this worker.`, { status: 502, headers: Object.assign({}, cors, { 'Content-Type': 'text/plain; charset=utf-8', 'X-Aura-Error': 'blocked-port' }) });
+        }
+        res = await fetch(url.toString(), {
+          method: request.method === 'HEAD' ? 'HEAD' : 'GET',
+          headers,
+          redirect: 'manual',
+          cache: 'no-store',
+          signal: ctl.signal
+        });
+        const loc = res.headers.get('Location');
+        if (res.status >= 300 && res.status < 400 && loc) { url = new URL(loc, url); continue; }
+        break;
+      }
     } catch (err) {
       return new Response('Upstream connection failed or timed out: ' + err.message, { status: 504, headers: cors });
     } finally {
@@ -94,7 +116,7 @@ export default {
 
     // Rewrite HLS playlists so every segment / key / child playlist also goes through this worker.
     const ct = (res.headers.get('Content-Type') || '').toLowerCase();
-    const finalUrl = res.url || upstream.toString();
+    const finalUrl = url.toString();
     if (ct.includes('mpegurl') || /\.m3u8(\?|$)/i.test(finalUrl)) {
       const text = await res.text();
       if (/^\s*#EXTM3U/i.test(text)) {
